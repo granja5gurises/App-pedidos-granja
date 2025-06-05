@@ -6,6 +6,8 @@ import PanelProductor from './components/admin/PanelProductor';
 import CiudadConfig from './components/admin/CiudadConfig';
 import ResumenCosecha from './components/admin/ResumenCosecha';
 import Splash from './pages/Splash';
+import MiPedido from './components/cliente/MiPedido';
+import InicioCliente from './components/cliente/InicioCliente';
 import Header from './components/Header';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
 
@@ -21,6 +23,8 @@ function App() {
         <Route path="/pedido" element={<PedidoForm />} />
         <Route path="/panel" element={<PanelProductor />} />
         <Route path="/ciudades" element={<CiudadConfig />} />
+        <Route path="/mipedido" element={<MiPedido />} />
+        <Route path="/inicio" element={<InicioCliente />} />
         <Route path="/resumen" element={<ResumenCosecha />} />
       </Routes>
     </>

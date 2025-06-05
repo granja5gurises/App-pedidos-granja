@@ -12,7 +12,7 @@ function Login() {
     e.preventDefault();
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate('/pedido');
+      navigate('/inicio');
     } catch (error) {
       alert('Error al iniciar sesión: ' + error.message);
     }

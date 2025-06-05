@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase';
 import {
-  collection, addDoc, getDocs, getDoc, doc, query, where
+  collection, addDoc, getDocs, getDoc, doc, query, where, deleteDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -42,6 +42,7 @@ const productosMock = [
 
 function PedidoForm() {
   const [pedido, setPedido] = useState({});
+  const [modificarId, setModificarId] = useState(null);
   const [mostrarResumen, setMostrarResumen] = useState(false);
   
 // CAMBIO: agregamos campo comentario
@@ -52,6 +53,18 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
   const [datosCiudad, setDatosCiudad] = useState(null);
 
   useEffect(() => {
+    const pedidoGuardado = localStorage.getItem("pedidoModificacion");
+    if (pedidoGuardado) {
+      const pedidoObj = JSON.parse(pedidoGuardado);
+      const productosCargados = {};
+      pedidoObj.productos.forEach(p => {
+        productosCargados[p.id] = p.cantidad;
+      });
+      setPedido(productosCargados);
+      setModificarId(pedidoObj.id);
+      localStorage.removeItem("pedidoModificacion");
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
@@ -97,10 +110,12 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
   const cancelarPedido = () => {
     setPedido({});
     setMostrarResumen(false);
+      window.location.href = '/inicio';
   };
 
   const editarPedido = () => {
     setMostrarResumen(false);
+      window.location.href = '/inicio';
   };
 
   const confirmarPedido = async () => {
@@ -120,6 +135,7 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
       const total = subtotal + costoEnvio;
 
       const nuevoPedido = {
+        userId: auth.currentUser.uid,
         productos,
         tipoEntrega,
         ciudad: usuario?.ciudad,
@@ -130,9 +146,12 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
         total,
         
 comentario,
-timestamp: new Date()
+fecha: new Date()
       };
 
+      if (modificarId) {
+        await deleteDoc(doc(db, 'pedidos', modificarId));
+      }
       await addDoc(collection(db, 'pedidos'), nuevoPedido);
 
       const mensaje = tipoEntrega === 'envio'
@@ -142,6 +161,7 @@ timestamp: new Date()
       alert('Pedido confirmado.\n' + mensaje);
       setPedido({});
       setMostrarResumen(false);
+      window.location.href = '/inicio';
     } catch (e) {
       alert('Error al guardar el pedido: ' + e.message);
     }
@@ -157,6 +177,14 @@ timestamp: new Date()
 
   return (
     <div>
+
+      {usuario && (
+        <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 20 }}>
+          <button onClick={() => window.location.href = '/inicio'}>Inicio</button>
+          <button onClick={() => window.location.href = '/mipedido'}>Mis pedidos</button>
+        </div>
+      )}
+
       
       {usuario && (
         <button onClick={async () => {
