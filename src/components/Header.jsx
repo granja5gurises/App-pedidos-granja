@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -34,13 +35,20 @@ export default function Header() {
     navigate('/login');
   };
 
-  if (!admin) return null;
+  if (!usuario) return null;
 
   return (
     <nav style={{ padding: 10, background: '#f0f0f0', marginBottom: 20 }}>
-      <Link to="/panel" style={{ marginRight: 10 }}>Panel Productor</Link>
-      <Link to="/ciudades" style={{ marginRight: 10 }}>Ciudades</Link>
-      <Link to="/resumen" style={{ marginRight: 10 }}>Resumen cosecha</Link>
+      {admin && (
+        <>
+          <Link to="/panel" style={{ marginRight: 10 }}>Panel Productor</Link>
+          <Link to="/ciudades" style={{ marginRight: 10 }}>Ciudades</Link>
+          <Link to="/resumen" style={{ marginRight: 10 }}>Resumen cosecha</Link>
+        </>
+      )}
+      {usuario.email === 'productor@granja.com' && (
+        <Link to="/productos" style={{ marginRight: 10 }}>Productos</Link>
+      )}
       <button onClick={handleLogout} style={{ marginLeft: 20 }}>Cerrar sesión</button>
     </nav>
   );

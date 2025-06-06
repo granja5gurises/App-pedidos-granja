@@ -1,4 +1,3 @@
-// Igual a la versión debug, pero restaurando el mensaje completo según tipo de entrega
 
 import { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase';
@@ -7,97 +6,85 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
-const productosMock = [
-  {
-    id: 'bolson_clasico',
-    nombre: 'Bolson Clásico',
-    precio: 16000,
-    imagen: 'https://via.placeholder.com/100?text=Bolson+Clasico'
-  },
-  {
-    id: 'bolson_familiar',
-    nombre: 'Bolson Familiar',
-    precio: 24000,
-    imagen: 'https://via.placeholder.com/100?text=Bolson+Familiar'
-  },
-  {
-    id: 'acelga',
-    nombre: 'Acelga',
-    precio: 1200,
-    imagen: 'https://via.placeholder.com/100?text=Acelga'
-  },
-  {
-    id: 'zapallo',
-    nombre: 'Zapallo',
-    precio: 1500,
-    imagen: 'https://via.placeholder.com/100?text=Zapallo'
-  },
-  {
-    id: 'tomate',
-    nombre: 'Tomate',
-    precio: 2000,
-    imagen: 'https://via.placeholder.com/100?text=Tomate'
-  }
-];
-
 function PedidoForm() {
   const [pedido, setPedido] = useState({});
-  const [modificarId, setModificarId] = useState(null);
+  const [productos, setProductos] = useState([]);
+  const [productosQuitados, setProductosQuitados] = useState([]);
+  const [comentario, setComentario] = useState('');
   const [mostrarResumen, setMostrarResumen] = useState(false);
-  
-// CAMBIO: agregamos campo comentario
-const [comentario, setComentario] = useState('');
-
-const [tipoEntrega, setTipoEntrega] = useState('retiro');
+  const [tipoEntrega, setTipoEntrega] = useState('retiro');
   const [usuario, setUsuario] = useState(null);
   const [datosCiudad, setDatosCiudad] = useState(null);
 
   useEffect(() => {
-    const pedidoGuardado = localStorage.getItem("pedidoModificacion");
-    if (pedidoGuardado) {
-      const pedidoObj = JSON.parse(pedidoGuardado);
-      const productosCargados = {};
-      pedidoObj.productos.forEach(p => {
-        productosCargados[p.id] = p.cantidad;
-      });
-      setPedido(productosCargados);
-      setModificarId(pedidoObj.id);
-      localStorage.removeItem("pedidoModificacion");
-    }
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const q = query(collection(db, 'usuarios'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
         if (!snapshot.empty) {
           const datos = snapshot.docs[0].data();
-          setUsuario({ ...datos, docId: snapshot.docs[0].id });
+          setUsuario(datos);
           const ciudadRef = doc(db, 'ciudades', datos.ciudad);
           const ciudadSnap = await getDoc(ciudadRef);
-          if (ciudadSnap.exists()) {
-            setDatosCiudad(ciudadSnap.data());
-          }
+          if (ciudadSnap.exists()) setDatosCiudad(ciudadSnap.data());
         }
       }
     });
+
+    const cargarProductos = async () => {
+      const snap = await getDocs(collection(db, 'productos'));
+      const lista = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProductos(lista.filter(p => !p.oculto));
+    };
+
+    cargarProductos();
     return () => unsubscribe();
   }, []);
 
   const toggleProducto = (id) => {
-    setPedido(prev => {
-      const nuevo = { ...prev };
-      if (nuevo[id]) {
-        delete nuevo[id];
-      } else {
-        nuevo[id] = 1;
-      }
-      return nuevo;
-    });
+    if (pedido[id]) {
+      const nuevo = { ...pedido };
+      delete nuevo[id];
+      setPedido(nuevo);
+      setProductosQuitados([]);
+    } else {
+      setPedido({ ...pedido, [id]: 1 });
+    }
   };
 
-  const cambiarCantidad = (id, cantidad) => {
-    setPedido(prev => ({ ...prev, [id]: parseInt(cantidad) }));
+  const quitarDelBolson = (id) => {
+    if (productosQuitados.includes(id)) {
+      setProductosQuitados(prev => prev.filter(p => p !== id));
+    } else if (productosQuitados.length < 2) {
+      setProductosQuitados(prev => [...prev, id]);
+    } else {
+      alert("Solo podés quitar 2 productos del bolsón");
+    }
   };
+
+  const redondear = (n) => Math.round(n / 100) * 100;
+  const precioConDescuento = (precio, descuento) => redondear(precio * (1 - descuento / 100));
+
+  const calcularPrecioBolson = (bolson) => {
+    return redondear(
+      bolson.contenido
+        .filter(id => !productosQuitados.includes(id))
+        .reduce((acc, id) => {
+          const prod = productos.find(p => p.id === id);
+          return acc + (prod ? precioConDescuento(prod.precio, bolson.descuento || 0) : 0);
+        }, 0)
+    );
+  };
+
+  const subtotal = Object.entries(pedido).reduce((acc, [id, cantidad]) => {
+    const prod = productos.find(p => p.id === id);
+    if (!prod) return acc;
+    if (prod.esBolson) return acc + calcularPrecioBolson(prod) * cantidad;
+    return acc + (prod.precio || 0) * cantidad;
+  }, 0);
+
+  const costoEnvio = tipoEntrega === 'envio' ? parseInt(datosCiudad?.costoEnvio || 0) : 0;
+  const total = subtotal + costoEnvio;
 
   const hacerPedido = () => {
     if (Object.keys(pedido).length === 0) {
@@ -110,33 +97,25 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
   const cancelarPedido = () => {
     setPedido({});
     setMostrarResumen(false);
-      window.location.href = '/inicio';
-  };
-
-  const editarPedido = () => {
-    setMostrarResumen(false);
-      window.location.href = '/inicio';
+    window.location.href = '/inicio';
   };
 
   const confirmarPedido = async () => {
     try {
-      const productos = Object.entries(pedido).map(([id, cantidad]) => {
-        const prod = productosMock.find(p => p.id === id);
+      const productosConfirmados = Object.entries(pedido).map(([id, cantidad]) => {
+        const prod = productos.find(p => p.id === id);
+        const precio = prod.esBolson ? calcularPrecioBolson(prod) : prod.precio;
         return {
           id,
           nombre: prod.nombre,
           cantidad,
-          precio: prod.precio
+          precio
         };
       });
 
-      const subtotal = productos.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
-      const costoEnvio = tipoEntrega === 'envio' ? parseInt(datosCiudad?.costoEnvio || 0) : 0;
-      const total = subtotal + costoEnvio;
-
       const nuevoPedido = {
         userId: auth.currentUser.uid,
-        productos,
+        productos: productosConfirmados,
         tipoEntrega,
         ciudad: usuario?.ciudad,
         direccion: usuario?.direccion,
@@ -144,21 +123,12 @@ const [tipoEntrega, setTipoEntrega] = useState('retiro');
         apellido: usuario?.apellido,
         email: usuario?.email,
         total,
-        
-comentario,
-fecha: new Date()
+        comentario,
+        fecha: new Date()
       };
 
-      if (modificarId) {
-        await deleteDoc(doc(db, 'pedidos', modificarId));
-      }
       await addDoc(collection(db, 'pedidos'), nuevoPedido);
-
-      const mensaje = tipoEntrega === 'envio'
-        ? `Recibirás tu pedido en tu domicilio el ${datosCiudad?.horario}`
-        : `Podés retirarlo en ${datosCiudad?.puntoRetiro} el ${datosCiudad?.horario}`;
-
-      alert('Pedido confirmado.\n' + mensaje);
+      alert('Pedido confirmado');
       setPedido({});
       setMostrarResumen(false);
       window.location.href = '/inicio';
@@ -167,17 +137,11 @@ fecha: new Date()
     }
   };
 
-  const subtotal = Object.entries(pedido).reduce((acc, [id, cantidad]) => {
-    const prod = productosMock.find(p => p.id === id);
-    return acc + (prod?.precio || 0) * cantidad;
-  }, 0);
-
-  const costoEnvio = tipoEntrega === 'envio' ? parseInt(datosCiudad?.costoEnvio || 0) : 0;
-  const total = subtotal + costoEnvio;
+  const bolsones = productos.filter(p => p.esBolson);
+  const productosSimples = productos.filter(p => !p.esBolson);
 
   return (
     <div>
-
       {usuario && (
         <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 20 }}>
           <button onClick={() => window.location.href = '/inicio'}>Inicio</button>
@@ -185,7 +149,6 @@ fecha: new Date()
         </div>
       )}
 
-      
       {usuario && (
         <button onClick={async () => {
           const { signOut } = await import('firebase/auth');
@@ -206,24 +169,38 @@ fecha: new Date()
       )}
 
       <h2>Formulario de Pedido</h2>
+
       {!mostrarResumen && (
         <>
-          {productosMock.map(prod => (
-            <div key={prod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <input
-                type="checkbox"
-                checked={pedido.hasOwnProperty(prod.id)}
-                onChange={() => toggleProducto(prod.id)}
-              />
+          {bolsones.map(bolson => (
+            <div key={bolson.id} style={{ marginBottom: 10 }}>
+              <input type="checkbox" checked={pedido[bolson.id]} onChange={() => toggleProducto(bolson.id)} />
+              <img src={bolson.imagen} alt={bolson.nombre} width="60" />
+              <strong>{bolson.nombre}</strong>
+              {pedido[bolson.id] && (
+                <ul>
+                  {bolson.contenido.map(itemId => {
+                    const item = productos.find(p => p.id === itemId);
+                    const quitado = productosQuitados.includes(itemId);
+                    return (
+                      <li key={itemId} style={{ textDecoration: quitado ? 'line-through' : 'none' }}>
+                        {item?.nombre} (${precioConDescuento(item?.precio || 0, bolson.descuento || 0)})
+                        <button onClick={() => quitarDelBolson(itemId)} style={{ marginLeft: 10 }}>
+                          Quitar
+                        </button>
+                      </li>
+                    );
+                  })}
+                  <p><strong>Precio con descuento:</strong> ${calcularPrecioBolson(bolson)}</p>
+                </ul>
+              )}
+            </div>
+          ))}
+          {productosSimples.map(prod => (
+            <div key={prod.id} style={{ marginBottom: 10 }}>
+              <input type="checkbox" checked={pedido[prod.id]} onChange={() => toggleProducto(prod.id)} />
               <img src={prod.imagen} alt={prod.nombre} width="60" />
               <label>{prod.nombre} (${prod.precio})</label>
-              {pedido.hasOwnProperty(prod.id) && (
-                <select value={pedido[prod.id]} onChange={(e) => cambiarCantidad(prod.id, e.target.value)}>
-                  {[...Array(10)].map((_, i) => (
-                    <option key={i + 1} value={i + 1}>{i + 1}</option>
-                  ))}
-                </select>
-              )}
             </div>
           ))}
           <button onClick={hacerPedido}>Hacer Pedido</button>
@@ -235,10 +212,11 @@ fecha: new Date()
           <h3>Confirmar Pedido</h3>
           <ul>
             {Object.entries(pedido).map(([id, cantidad]) => {
-              const prod = productosMock.find(p => p.id === id);
+              const prod = productos.find(p => p.id === id);
+              const precio = prod.esBolson ? calcularPrecioBolson(prod) : prod.precio;
               return (
                 <li key={id}>
-                  {prod?.nombre} ({cantidad}) x ${prod?.precio} = ${prod?.precio * cantidad}
+                  {prod?.nombre} ({cantidad}) x ${precio} = ${precio * cantidad}
                 </li>
               );
             })}
@@ -251,7 +229,7 @@ fecha: new Date()
 
           <p>Subtotal: ${subtotal}</p>
           {tipoEntrega === 'envio' && <p>Envío: ${costoEnvio}</p>}
-          
+
           <div style={{ marginTop: '1rem' }}>
             <label>¿Querés dejar algún comentario sobre tu pedido?</label><br />
             <textarea
@@ -261,16 +239,11 @@ fecha: new Date()
               placeholder="Ej: batatas chicas por favor"
               style={{ width: '100%', marginTop: '5px' }}
             />
-            <small style={{ display: 'block', marginTop: '5px', color: '#555' }}>
-              *Este comentario no modifica el total automáticamente.
-            </small>
-
           </div>
 
           <p><strong>Total: ${total}</strong></p>
 
           <button onClick={confirmarPedido}>Confirmar</button>
-          <button onClick={editarPedido}>Editar</button>
           <button onClick={cancelarPedido}>Cancelar</button>
         </div>
       )}

@@ -1,3 +1,4 @@
+
 import { Routes, Route } from 'react-router-dom';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
@@ -10,6 +11,7 @@ import MiPedido from './components/cliente/MiPedido';
 import InicioCliente from './components/cliente/InicioCliente';
 import Header from './components/Header';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
+import PanelProductos from './components/admin/PanelProductos'; // agregado
 
 function App() {
   return (
@@ -26,6 +28,7 @@ function App() {
         <Route path="/mipedido" element={<MiPedido />} />
         <Route path="/inicio" element={<InicioCliente />} />
         <Route path="/resumen" element={<ResumenCosecha />} />
+        <Route path="/productos" element={<PanelProductos />} /> {/* restringido desde dentro */}
       </Routes>
     </>
   );
