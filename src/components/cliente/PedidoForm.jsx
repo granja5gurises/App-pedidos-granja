@@ -1,10 +1,63 @@
-
 import { useState, useEffect } from 'react';
 import { db, auth } from '../../firebase';
 import {
-  collection, addDoc, getDocs, getDoc, doc, query, where, deleteDoc
+  collection, addDoc, getDocs, getDoc, doc, query, where, runTransaction
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+
+// Textos centralizados para internacionalización
+const texts = {
+  inicio: "Inicio",
+  misPedidos: "Mis pedidos",
+  salir: "Salir",
+  formPedido: "Formulario de Pedido",
+  hacerPedido: "Hacer Pedido",
+  quitar: "Quitar",
+  precioConDesc: "Precio con descuento",
+  confirmar: "Confirmar",
+  cancelar: "Cancelar",
+  confirmarPedido: "Confirmar Pedido",
+  retira: "Retira en punto de entrega",
+  envio: "Envío a domicilio",
+  subtotal: "Subtotal",
+  envioCosto: "Envío",
+  total: "Total",
+  comentario: "¿Querés dejar algún comentario sobre tu pedido?",
+  comentarioPlaceholder: "Ej: batatas chicas por favor",
+  seleccionadoAlMenosUno: "Seleccioná al menos un producto",
+  pedidoConfirmado: "Pedido confirmado",
+  errorGuardar: "Error al guardar el pedido",
+  soloQuitar2: "Solo podés quitar 2 productos del bolsón"
+};
+
+// --- Helper para comprobante secuencial ---
+const getNuevoComprobante = async () => {
+  // Correlativos en: configuracion/correlativos (doc), campos: prefijoComprobante y nroComprobante
+  const ref = doc(db, "configuracion", "correlativos");
+
+  return await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    let prefijo = 'A', nro = 1;
+    if (snap.exists()) {
+      prefijo = snap.data().prefijoComprobante || 'A';
+      nro = snap.data().nroComprobante || 1;
+    }
+    let nuevoPrefijo = prefijo;
+    let nuevoNro = nro + 1;
+    if (nro >= 999999) {
+      // Salta a la siguiente letra
+      const nextChar = String.fromCharCode(prefijo.charCodeAt(0) + 1);
+      nuevoPrefijo = nextChar > 'Z' ? 'A' : nextChar;
+      nuevoNro = 1;
+    }
+    transaction.set(ref, {
+      prefijoComprobante: nuevoPrefijo,
+      nroComprobante: nuevoNro
+    }, { merge: true });
+    // Devuelve string tipo "A000001"
+    return prefijo + String(nro).padStart(6, '0');
+  });
+};
 
 function PedidoForm() {
   const [pedido, setPedido] = useState({});
@@ -15,6 +68,7 @@ function PedidoForm() {
   const [tipoEntrega, setTipoEntrega] = useState('retiro');
   const [usuario, setUsuario] = useState(null);
   const [datosCiudad, setDatosCiudad] = useState(null);
+  const [camposRegistro, setCamposRegistro] = useState([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -37,7 +91,24 @@ function PedidoForm() {
       setProductos(lista.filter(p => !p.oculto));
     };
 
+    // Cargar configuración dinámica de campos de usuario
+    const cargarCampos = async () => {
+      const ref = doc(db, "configuracion", "general")
+      const snap = await getDoc(ref)
+      if (snap.exists()) {
+        let arr = snap.data().camposRegistro
+        if (!Array.isArray(arr)) {
+          arr = Object.entries(arr).map(([nombre, props]) => ({
+            nombre,
+            ...props
+          }))
+        }
+        setCamposRegistro(arr.filter(c => c.visible !== false))
+      }
+    }
+
     cargarProductos();
+    cargarCampos();
     return () => unsubscribe();
   }, []);
 
@@ -58,7 +129,7 @@ function PedidoForm() {
     } else if (productosQuitados.length < 2) {
       setProductosQuitados(prev => [...prev, id]);
     } else {
-      alert("Solo podés quitar 2 productos del bolsón");
+      alert(texts.soloQuitar2);
     }
   };
 
@@ -83,12 +154,15 @@ function PedidoForm() {
     return acc + (prod.precio || 0) * cantidad;
   }, 0);
 
-  const costoEnvio = tipoEntrega === 'envio' ? parseInt(datosCiudad?.costoEnvio || 0) : 0;
+  // Nuevo: el costo de envío de la ciudad (si corresponde)
+  const costoEnvio = tipoEntrega === 'envio'
+    ? parseInt(datosCiudad?.costoEnvio || "0")
+    : 0;
   const total = subtotal + costoEnvio;
 
   const hacerPedido = () => {
     if (Object.keys(pedido).length === 0) {
-      alert('Seleccioná al menos un producto');
+      alert(texts.seleccionadoAlMenosUno);
       return;
     }
     setMostrarResumen(true);
@@ -100,6 +174,7 @@ function PedidoForm() {
     window.location.href = '/inicio';
   };
 
+  // --- FUNCIÓN MODIFICADA PARA COMPROBANTE ---
   const confirmarPedido = async () => {
     try {
       const productosConfirmados = Object.entries(pedido).map(([id, cantidad]) => {
@@ -113,27 +188,42 @@ function PedidoForm() {
         };
       });
 
+      const costoEnvioPedido = tipoEntrega === "envio"
+        ? parseInt(datosCiudad?.costoEnvio || "0")
+        : 0;
+
+      // Campos de usuario configurables
+      let userInfo = {};
+      camposRegistro.forEach(campo => {
+        userInfo[campo.nombre] = usuario?.[campo.nombre] || "";
+      });
+
+      // --- Nuevo: generar número de comprobante ---
+      const comprobante = await getNuevoComprobante();
+
       const nuevoPedido = {
         userId: auth.currentUser.uid,
         productos: productosConfirmados,
         tipoEntrega,
-        ciudad: usuario?.ciudad,
-        direccion: usuario?.direccion,
-        nombre: usuario?.nombre,
-        apellido: usuario?.apellido,
-        email: usuario?.email,
+        ...userInfo,
         total,
         comentario,
-        fecha: new Date()
+        costoEnvio: costoEnvioPedido,
+        fecha: new Date(),
+        comprobante // <-- GUARDAMOS EL NRO DE PEDIDO!
       };
 
       await addDoc(collection(db, 'pedidos'), nuevoPedido);
-      alert('Pedido confirmado');
+
+      // Guardar comprobante en sessionStorage para confirmación
+      window.sessionStorage.setItem("ultimoComprobante", comprobante);
+
+      alert(texts.pedidoConfirmado);
       setPedido({});
       setMostrarResumen(false);
-      window.location.href = '/inicio';
+      window.location.href = '/confirmacion-pedido';
     } catch (e) {
-      alert('Error al guardar el pedido: ' + e.message);
+      alert(texts.errorGuardar + ': ' + e.message);
     }
   };
 
@@ -144,8 +234,8 @@ function PedidoForm() {
     <div>
       {usuario && (
         <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 20 }}>
-          <button onClick={() => window.location.href = '/inicio'}>Inicio</button>
-          <button onClick={() => window.location.href = '/mipedido'}>Mis pedidos</button>
+          <button onClick={() => window.location.href = '/inicio'}>{texts.inicio}</button>
+          <button onClick={() => window.location.href = '/mipedido'}>{texts.misPedidos}</button>
         </div>
       )}
 
@@ -164,11 +254,11 @@ function PedidoForm() {
           padding: '4px 8px',
           borderRadius: '5px'
         }}>
-          Salir
+          {texts.salir}
         </button>
       )}
 
-      <h2>Formulario de Pedido</h2>
+      <h2>{texts.formPedido}</h2>
 
       {!mostrarResumen && (
         <>
@@ -186,12 +276,12 @@ function PedidoForm() {
                       <li key={itemId} style={{ textDecoration: quitado ? 'line-through' : 'none' }}>
                         {item?.nombre} (${precioConDescuento(item?.precio || 0, bolson.descuento || 0)})
                         <button onClick={() => quitarDelBolson(itemId)} style={{ marginLeft: 10 }}>
-                          Quitar
+                          {texts.quitar}
                         </button>
                       </li>
                     );
                   })}
-                  <p><strong>Precio con descuento:</strong> ${calcularPrecioBolson(bolson)}</p>
+                  <p><strong>{texts.precioConDesc}:</strong> ${calcularPrecioBolson(bolson)}</p>
                 </ul>
               )}
             </div>
@@ -203,13 +293,13 @@ function PedidoForm() {
               <label>{prod.nombre} (${prod.precio})</label>
             </div>
           ))}
-          <button onClick={hacerPedido}>Hacer Pedido</button>
+          <button onClick={hacerPedido}>{texts.hacerPedido}</button>
         </>
       )}
 
       {mostrarResumen && (
         <div style={{ backgroundColor: '#eef', padding: '1rem', marginTop: '20px' }}>
-          <h3>Confirmar Pedido</h3>
+          <h3>{texts.confirmarPedido}</h3>
           <ul>
             {Object.entries(pedido).map(([id, cantidad]) => {
               const prod = productos.find(p => p.id === id);
@@ -223,28 +313,32 @@ function PedidoForm() {
           </ul>
 
           <div>
-            <label><input type="radio" name="entrega" checked={tipoEntrega === 'retiro'} onChange={() => setTipoEntrega('retiro')} /> Retira en punto de entrega</label>
-            <label><input type="radio" name="entrega" checked={tipoEntrega === 'envio'} onChange={() => setTipoEntrega('envio')} /> Envío a domicilio</label>
+            <label>
+              <input type="radio" name="entrega" checked={tipoEntrega === 'retiro'} onChange={() => setTipoEntrega('retiro')} /> {texts.retira}
+            </label>
+            <label>
+              <input type="radio" name="entrega" checked={tipoEntrega === 'envio'} onChange={() => setTipoEntrega('envio')} /> {texts.envio}
+            </label>
           </div>
 
-          <p>Subtotal: ${subtotal}</p>
-          {tipoEntrega === 'envio' && <p>Envío: ${costoEnvio}</p>}
+          <p>{texts.subtotal}: ${subtotal}</p>
+          {tipoEntrega === 'envio' && <p>{texts.envioCosto}: ${costoEnvio}</p>}
 
           <div style={{ marginTop: '1rem' }}>
-            <label>¿Querés dejar algún comentario sobre tu pedido?</label><br />
+            <label>{texts.comentario}</label><br />
             <textarea
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
               rows="3"
-              placeholder="Ej: batatas chicas por favor"
+              placeholder={texts.comentarioPlaceholder}
               style={{ width: '100%', marginTop: '5px' }}
             />
           </div>
 
-          <p><strong>Total: ${total}</strong></p>
+          <p><strong>{texts.total}: ${total}</strong></p>
 
-          <button onClick={confirmarPedido}>Confirmar</button>
-          <button onClick={cancelarPedido}>Cancelar</button>
+          <button onClick={confirmarPedido}>{texts.confirmar}</button>
+          <button onClick={cancelarPedido}>{texts.cancelar}</button>
         </div>
       )}
     </div>

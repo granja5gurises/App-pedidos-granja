@@ -1,5 +1,10 @@
 import React from 'react';
 
+// Textos centralizados para internacionalización
+const texts = {
+  ayuda: "¿Necesitás ayuda?"
+};
+
 export default function FloatingWhatsApp() {
   return (
     <a
@@ -26,7 +31,7 @@ export default function FloatingWhatsApp() {
         alt="WhatsApp"
         style={{ width: 24, height: 24, marginRight: 8 }}
       />
-      <span style={{ fontSize: '0.9rem' }}>¿Necesitás ayuda?</span>
+      <span style={{ fontSize: '0.9rem' }}>{texts.ayuda}</span>
     </a>
   );
 }

@@ -1,0 +1,148 @@
+:root {
+  --color-bg: #f5f6fa;
+  --color-sidebar: #1e1e2f;
+  --color-primary: #3f51b5;
+  --color-light: #ffffff;
+  --color-text: #333;
+  --color-muted: #777;
+  --radius: 12px;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.admin-container {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.admin-sidebar {
+  width: 240px;
+  background: var(--color-sidebar);
+  color: #fff;
+  padding: 24px;
+}
+
+.admin-sidebar h2 {
+  font-size: 22px;
+  margin-bottom: 32px;
+  letter-spacing: 1px;
+}
+
+.admin-sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-sidebar nav a {
+  color: #ccc;
+  text-decoration: none;
+  padding: 4px 0;
+  transition: 0.3s;
+}
+
+.admin-sidebar nav a:hover {
+  color: var(--color-primary);
+}
+
+.admin-sidebar .section-title {
+  color: #aaa;
+  font-weight: bold;
+  margin-top: 20px;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.admin-main {
+  flex: 1;
+  padding: 40px;
+}
+
+.admin-main h1 {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 24px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.card {
+  background: var(--color-light);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  transition: transform 0.2s;
+}
+
+.card:hover {
+  transform: scale(1.01);
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.card-desc {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+.card-horizontal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.btn-primary:hover {
+  background: #32408f;
+}
+
+/* Extra para cards clickeables */
+.card-link {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.card-link:active {
+  transform: scale(0.99);
+}
+.card-link:hover {
+  box-shadow: 0 4px 14px rgba(63,81,181,0.13);
+  background: #f8faff;
+}
+
+/* Inputs admin pro */
+.input-admin {
+  border: 1px solid #ccc;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+.input-admin:focus {
+  outline: 2px solid #3f51b5;
+  border-color: #3f51b5;
+}

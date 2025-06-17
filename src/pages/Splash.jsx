@@ -1,28 +1,30 @@
+
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 
 function Splash() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      navigate('/login');
-    }, 3000); // 3 segundos
+    const checkAdmin = async () => {
+      const db = getFirestore();
+      const q = query(collection(db, 'usuarios'), where('admin', '==', true));
+      const snap = await getDocs(q);
 
-    return () => clearTimeout(timer);
+      if (snap.empty) {
+        navigate('/register-admin');
+      } else {
+        navigate('/login');
+      }
+    };
+
+    checkAdmin();
   }, [navigate]);
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100vh',
-      fontSize: '2rem'
-    }}>
-      <p>🌱 Granja 5 Gurises</p>
-      <p>Bienvenido</p>
+    <div style={{ padding: '2rem' }}>
+      <h2>Cargando...</h2>
     </div>
   );
 }

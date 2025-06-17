@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { getAuth, signOut } from "firebase/auth";
 import {
@@ -10,6 +9,31 @@ import {
 } from "firebase/firestore";
 import FloatingWhatsApp from "../FloatingWhatsApp";
 import { useNavigate } from "react-router-dom";
+
+// Textos centralizados para internacionalización
+const texts = {
+  titulo: "Mis Pedidos",
+  pendiente: "Pedido Pendiente",
+  noPendiente: "No tenés pedidos pendientes.",
+  anteriores: "Pedidos Anteriores",
+  fecha: "Fecha",
+  productos: "Productos",
+  entrega: "Entrega",
+  envio: "Con envío a domicilio",
+  retiro: "Retira en punto de entrega",
+  total: "Total",
+  estado: "Estado",
+  pendienteEstado: "Pendiente",
+  entregadoEstado: "Entregado",
+  modificar: "Modificar pedido",
+  cancelar: "Cancelar pedido",
+  cancelarConfirm: "Pedido cancelado.",
+  volverInicio: "Volver al inicio",
+  cerrarSesion: "Cerrar sesión",
+  sinFecha: "Sin fecha",
+  consultar: "Consultar",
+  comprobante: "Número de pedido"
+};
 
 const MiPedido = () => {
   const auth = getAuth();
@@ -51,7 +75,7 @@ const MiPedido = () => {
   const handleCancelar = async () => {
     if (!pedido) return;
     await deleteDoc(doc(db, "pedidos", pedido.id));
-    alert("Pedido cancelado.");
+    alert(texts.cancelarConfirm);
     setPedido(null);
     setConfirmacionVisible(false);
   };
@@ -79,22 +103,28 @@ const MiPedido = () => {
     const config = ciudadConfig[ciudad];
     const envioTexto =
       pedidoData.entrega === "envio"
-        ? `Con envío a domicilio: $${config?.costoEnvio || 0} (${pedidoData.direccion})`
-        : "Retira en punto de entrega";
+        ? `${texts.envio}: $${config?.costoEnvio || 0} (${pedidoData.direccion})`
+        : texts.retiro;
 
     return (
       <div style={{ border: "1px solid #ccc", padding: 16, marginBottom: 16 }}>
-        <p><strong>Fecha:</strong> {pedidoData.fecha?.seconds ? new Date(pedidoData.fecha.seconds * 1000).toLocaleDateString() : 'Sin fecha'}</p>
-        <p><strong>Productos:</strong> {productosList}</p>
-        <p><strong>Entrega:</strong> {envioTexto}</p>
-        <p><strong>Total:</strong> ${pedidoData.total || "Consultar"}</p>
-        <p><strong>Estado:</strong> {pedidoData.estado || (esPendiente ? "Pendiente" : "Entregado")}</p>
+        {/* Mostrar comprobante si existe */}
+        {pedidoData.comprobante && (
+          <p>
+            <strong>{texts.comprobante}:</strong> {pedidoData.comprobante}
+          </p>
+        )}
+        <p><strong>{texts.fecha}:</strong> {pedidoData.fecha?.seconds ? new Date(pedidoData.fecha.seconds * 1000).toLocaleDateString() : texts.sinFecha}</p>
+        <p><strong>{texts.productos}:</strong> {productosList}</p>
+        <p><strong>{texts.entrega}:</strong> {envioTexto}</p>
+        <p><strong>{texts.total}:</strong> ${pedidoData.total || texts.consultar}</p>
+        <p><strong>{texts.estado}:</strong> {pedidoData.estado || (esPendiente ? texts.pendienteEstado : texts.entregadoEstado)}</p>
 
         {esPendiente && (
           <>
-            <button onClick={handleModificar}>Modificar pedido</button>
+            <button onClick={handleModificar}>{texts.modificar}</button>
             <button onClick={handleCancelar} style={{ marginLeft: 8, color: "red" }}>
-              Cancelar pedido
+              {texts.cancelar}
             </button>
           </>
         )}
@@ -104,27 +134,27 @@ const MiPedido = () => {
 
   return (
     <div>
-      <h2>Mis Pedidos</h2>
+      <h2>{texts.titulo}</h2>
 
       {pedido ? (
         <>
-          <h3>Pedido Pendiente</h3>
+          <h3>{texts.pendiente}</h3>
           {renderPedido(pedido, true)}
         </>
       ) : (
-        <p>No tenés pedidos pendientes.</p>
+        <p>{texts.noPendiente}</p>
       )}
 
       {historial.length > 0 && (
         <>
-          <h3>Pedidos Anteriores</h3>
+          <h3>{texts.anteriores}</h3>
           {historial.map((p) => renderPedido(p, false))}
         </>
       )}
 
       <div style={{ marginTop: 32 }}>
-        <button onClick={volverInicio}>Volver al inicio</button>
-        <button onClick={handleLogout} style={{ marginLeft: 8 }}>Cerrar sesión</button>
+        <button onClick={volverInicio}>{texts.volverInicio}</button>
+        <button onClick={handleLogout} style={{ marginLeft: 8 }}>{texts.cerrarSesion}</button>
       </div>
 
       <FloatingWhatsApp />
