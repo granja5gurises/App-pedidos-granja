@@ -1,112 +1,81 @@
-import { useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import React, { useEffect, useState } from "react";
+import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase";
+import { useTranslation } from "react-i18next";
 
-import PanelCombos from './components/admin/PanelCombos';
-import PanelRestricciones from './components/admin/PanelRestricciones';
-import PanelParametrosGenerales from './components/admin/PanelParametrosGenerales'; // <- corregido
-import Login from './components/auth/Login';
-import Register from './components/auth/Register';
-import RegisterAdmin from './components/auth/RegisterAdmin';
-import PedidoForm from './components/cliente/PedidoForm';
-import PanelProductor from './components/admin/PanelProductor';
-import PrepararPedidos from './components/admin/PrepararPedidos';
-import MiPedido from './components/cliente/MiPedido';
-import InicioCliente from './components/cliente/InicioCliente';
-import Header from './components/Header';
-import FloatingWhatsApp from './components/FloatingWhatsApp';
-import PanelProductos from './components/admin/PanelProductos';
-import PanelSecciones from './components/admin/PanelSecciones';
-import PanelUsuarios from './components/admin/PanelUsuarios';
-import DashboardAdmin from './components/admin/DashboardAdmin';
-import ConfirmacionPedido from './components/cliente/ConfirmacionPedido';
-import PanelApariencia from './components/admin/PanelApariencia';
-import PanelAdmins from './components/admin/PanelAdmins';
-import PanelAparienciaAdmin from './components/admin/PanelAparienciaAdmin';
-import PanelFacturacion from './components/admin/PanelFacturacion';
-import PanelListaGenerico from './components/admin/PanelListaGenerico';
+import InicioCliente from "./components/cliente/InicioCliente";
+import Login from "./components/auth/Login";
+import Register from "./components/auth/Register";
+import RegisterAdmin from "./components/auth/RegisterAdmin";
+import PanelProductor from "./components/admin/PanelProductor";
+import PedidoForm from "./components/cliente/PedidoForm";
+import ConfirmacionPedido from "./components/cliente/ConfirmacionPedido";
+import PanelProductos from "./components/admin/PanelProductos";
+import CiudadConfig from "./components/admin/CiudadConfig";
+import PrepararPedidos from "./components/admin/PrepararPedidos";
+import PanelSecciones from "./components/admin/PanelSecciones";
+import PanelRestricciones from "./components/admin/PanelRestricciones";
+import PanelCombos from "./components/admin/PanelCombos";
+import PanelListaGenerico from "./components/admin/PanelListaGenerico";
+import PanelUsuarios from "./components/admin/PanelUsuarios";
+import PanelApariencia from "./components/admin/PanelApariencia";
+import ConfigGeneral from "./components/admin/ConfigGeneral";
+import PanelFacturacion from "./components/admin/PanelFacturacion";
+import Header from "./components/Header";
 
-import useT from '.public/locales/useT';
-
-// Centralizamos aquí las rutas consideradas “admin” para simplificar cambios a futuro
-const adminPrefixes = [
-  "/dashboard-admin",
-  "/panel",
-  "/combos",
-  "/config",
-  "/productos",
-  "/secciones",
-  "/preparar",
-  "/facturacion",
-  "/restricciones",
-  "/apariencia",
-  "/admins",
-  "/config/apariencia-admin",
-  "/listas"
-];
-
-function esRutaAdmin(pathname) {
-  return adminPrefixes.some(pref => pathname.startsWith(pref));
-}
+import "react-toastify/dist/ReactToastify.css";
+import "./styles.css";
 
 function App() {
   const location = useLocation();
-  const t = useT();
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+
+  const { t } = useTranslation();
 
   useEffect(() => {
-    const cargarTitulo = async () => {
-      const db = getFirestore();
-      const ref = doc(db, "configuracion", "estilo");
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data();
-        document.title = data.nombreNegocio || t("tituloDefault");
+    const unsubscribe = onAuthStateChanged(auth, (userFirebase) => {
+      if (userFirebase) {
+        setUser(userFirebase);
+        if (location.pathname === "/login" || location.pathname === "/register") {
+          navigate("/");
+        }
       } else {
-        document.title = t("tituloDefault");
+        setUser(null);
+        if (location.pathname !== "/login" && location.pathname !== "/register" && location.pathname !== "/register-admin") {
+          navigate("/login");
+        }
       }
-    };
-    cargarTitulo();
-    // eslint-disable-next-line
-  }, []);
+    });
 
-  const enAdmin = esRutaAdmin(location.pathname);
+    return () => unsubscribe();
+  }, [location, navigate]);
 
   return (
     <>
-      <Header />
-      {!enAdmin && <FloatingWhatsApp />}
+      <Header user={user} />
+      <ToastContainer />
       <Routes>
-        {/* --- RUTAS PÚBLICAS Y CLIENTE --- */}
-        <Route path="/" element={<Login />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/register-admin" element={<RegisterAdmin />} />
-        <Route path="/pedido" element={<PedidoForm />} />
-        <Route path="/confirmacion-pedido" element={<ConfirmacionPedido />} />
-        <Route path="/mipedido" element={<MiPedido />} />
-        <Route path="/inicio" element={<InicioCliente />} />
-
-        {/* --- DASHBOARD ADMIN Y PANEL ADMIN --- */}
-        <Route path="/dashboard-admin" element={<DashboardAdmin />} />
-        <Route path="/panel" element={<PanelProductor />} />
-
-        {/* --- PANEL ADMINISTRATIVO --- */}
-        <Route path="/productos" element={<PanelProductos />} />
-        <Route path="/combos" element={<PanelCombos />} />
-        <Route path="/secciones" element={<PanelSecciones />} />
-        <Route path="/config" element={<PanelParametrosGenerales />} /> {/* <- corregido */}
-        <Route path="/preparar" element={<PrepararPedidos />} />
-        <Route path="/facturacion" element={<PanelFacturacion />} />
-        <Route path="/restricciones" element={<PanelRestricciones />} />
-        <Route path="/apariencia" element={<PanelApariencia />} />
-        <Route path="/admins" element={<PanelAdmins />} />
-        <Route path="/config/apariencia-admin" element={<PanelAparienciaAdmin />} />
-
-        {/* --- PANEL DINÁMICO DE LISTAS --- */}
-        <Route path="/listas/:nombreLista" element={<PanelListaGenerico />} />
-
-        {/* --- RUTA DINÁMICA (DEJAR SIEMPRE AL FINAL) --- */}
-        <Route path="/usuarios" element={<PanelUsuarios />} />
+        <Route path="/" element={<InicioCliente user={user} t={t} />} />
+        <Route path="/login" element={<Login t={t} />} />
+        <Route path="/register" element={<Register t={t} />} />
+        <Route path="/register-admin" element={<RegisterAdmin t={t} />} />
+        <Route path="/panel-productor" element={<PanelProductor user={user} t={t} />} />
+        <Route path="/pedido-form" element={<PedidoForm user={user} t={t} />} />
+        <Route path="/confirmacion-pedido" element={<ConfirmacionPedido user={user} t={t} />} />
+        <Route path="/panel-productos" element={<PanelProductos user={user} t={t} />} />
+        <Route path="/ciudad-config" element={<CiudadConfig user={user} t={t} />} />
+        <Route path="/preparar-pedidos" element={<PrepararPedidos user={user} t={t} />} />
+        <Route path="/panel-secciones" element={<PanelSecciones user={user} t={t} />} />
+        <Route path="/panel-restricciones" element={<PanelRestricciones user={user} t={t} />} />
+        <Route path="/panel-combos" element={<PanelCombos user={user} t={t} />} />
+        <Route path="/panel-lista-generico" element={<PanelListaGenerico user={user} t={t} />} />
+        <Route path="/panel-usuarios" element={<PanelUsuarios user={user} t={t} />} />
+        <Route path="/panel-apariencia" element={<PanelApariencia user={user} t={t} />} />
+        <Route path="/config-general" element={<ConfigGeneral user={user} t={t} />} />
+        <Route path="/panel-facturacion" element={<PanelFacturacion user={user} t={t} />} />
       </Routes>
     </>
   );
