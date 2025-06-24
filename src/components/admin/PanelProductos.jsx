@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { db } from "../../firebase";
 import {
   collection,
@@ -12,7 +13,6 @@ import {
   deleteField,
 } from "firebase/firestore";
 import BotonVolver from "./BotonVolver";
-import useT from "../../locales/useT";
 import usarCacheFirestore from "../../helpers/usarCacheFirestore";
 import registrarLog from "../../helpers/registrarLog";
 
@@ -116,7 +116,7 @@ const CAMPOS_FIJOS = [
 ];
 
 function PanelProductos() {
-  const t = useT();
+  const { t } = useTranslation();
   const [productos, setProductos] = useState([]);
   const [secciones, setSecciones] = useState([]);
   const [campos, setCampos] = useState([...CAMPOS_FIJOS]);
@@ -171,7 +171,7 @@ function PanelProductos() {
       setCampos([...CAMPOS_FIJOS, ...Array.from(extras)]);
       setCamposExtra(Array.from(extras));
     } catch (e) {
-      setError(t("errorCargaProductos"));
+      setError(t("panelProductos.errorCargaProductos"));
     }
   };
 
@@ -184,14 +184,14 @@ function PanelProductos() {
       }, 60 * 20);
       setSecciones(seccionesCache);
     } catch (e) {
-      setError(t("errorCargaSecciones"));
+      setError(t("panelProductos.errorCargaSecciones"));
     }
   };
 
   const handleNuevoProducto = async () => {
     if (!nuevo.nombre.trim() || !nuevo.precio || !nuevo.seccionId) {
       setError(
-        t("camposObligatorios", {
+        t("panelProductos.camposObligatorios", {
           campos: `${t("nombre")}, ${t("precio")}, ${t("categoria")}`,
         })
       );
@@ -219,7 +219,7 @@ function PanelProductos() {
         unidad: "",
         imagen: "",
       });
-      setMensaje(t("productoAgregado"));
+      setMensaje(t("panelProductos.productoAgregado"));
       setTimeout(() => setMensaje(""), 2200);
       cargarProductos();
       registrarLog({
@@ -230,16 +230,16 @@ function PanelProductos() {
         objetoId: ref.id,
       });
     } catch (e) {
-      setError(t("errorGuardarProducto"));
+      setError(t("panelProductos.errorGuardarProducto"));
     }
   };
 
   const handleEliminarProducto = async (id) => {
-    if (!window.confirm(t("seguroEliminar"))) return;
+    if (!window.confirm(t("panelProductos.seguroEliminar"))) return;
     try {
       await deleteDoc(doc(db, "productos", id));
       cargarProductos();
-      setMensaje(t("productoEliminado"));
+      setMensaje(t("panelProductos.productoEliminado"));
       setTimeout(() => setMensaje(""), 2000);
       registrarLog({
         accion: "baja_producto",
@@ -248,7 +248,7 @@ function PanelProductos() {
         objetoId: id,
       });
     } catch (e) {
-      setError(t("errorEliminarProducto"));
+      setError(t("panelProductos.errorEliminarProducto"));
     }
   };
 
@@ -277,7 +277,7 @@ function PanelProductos() {
       await updateDoc(doc(db, "productos", editId), registro);
       cancelarEdicion();
       cargarProductos();
-      setMensaje(t("productoEditado"));
+      setMensaje(t("panelProductos.productoEditado"));
       setTimeout(() => setMensaje(""), 2000);
       registrarLog({
         accion: "edicion_producto",
@@ -287,7 +287,7 @@ function PanelProductos() {
         objetoId: editId,
       });
     } catch (e) {
-      setError(t("errorGuardarProducto"));
+      setError(t("panelProductos.errorGuardarProducto"));
     }
   };
 
@@ -296,7 +296,7 @@ function PanelProductos() {
       await updateDoc(doc(db, "productos", id), { oculto: !oculto });
       cargarProductos();
     } catch (e) {
-      setError(t("errorOcultarProducto"));
+      setError(t("panelProductos.errorOcultarProducto"));
     }
   };
 
@@ -327,7 +327,7 @@ function PanelProductos() {
       CAMPOS_FIJOS.includes(nuevoNombre) ||
       camposExtra.includes(nuevoNombre)
     ) {
-      setError(t("nombreInvalido"));
+      setError(t("panelProductos.nombreInvalido"));
       return;
     }
     for (const item of productos) {
@@ -345,7 +345,7 @@ function PanelProductos() {
   };
 
   const eliminarCampo = async (campo) => {
-    if (!window.confirm(t("avisoEliminarCampo", { campo }))) return;
+    if (!window.confirm(t("panelProductos.avisoEliminarCampo", { campo }))) return;
     for (const item of productos) {
       if (Object.prototype.hasOwnProperty.call(item, campo)) {
         const ref = doc(db, "productos", item.id);
@@ -355,7 +355,7 @@ function PanelProductos() {
     setEditandoCampo(null);
     setNuevoNombreCampo("");
     await cargarProductos();
-    setMensaje(t("campoEliminado"));
+    setMensaje(t("panelProductos.campoEliminado"));
     setTimeout(() => setMensaje(""), 1600);
   };
 
@@ -366,7 +366,7 @@ function PanelProductos() {
   const exportarExcel = async () => {
     const XLSX = await import("xlsx");
     if (productos.length === 0) {
-      setError(t("noProductos"));
+      setError(t("panelProductos.noProductos"));
       return;
     }
     const header = [
@@ -393,8 +393,8 @@ function PanelProductos() {
     });
     const ws = XLSX.utils.json_to_sheet(data, { header });
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, t("listaProductos"));
-    XLSX.writeFile(wb, t("excelNombre"));
+    XLSX.utils.book_append_sheet(wb, ws, t("panelProductos.listaProductos"));
+    XLSX.writeFile(wb, t("panelProductos.excelNombre"));
   };
 
   function MensajeError({ error }) {
@@ -467,7 +467,7 @@ function PanelProductos() {
         texto={t("volverPanel")}
       />
 
-      <h2>{t("nuevoProducto")}</h2>
+      <h2>{t("panelProductos.nuevoProducto")}</h2>
 
       <MensajeError error={error} />
       <MensajeOk mensaje={mensaje} />
@@ -612,14 +612,14 @@ function PanelProductos() {
                     <>
                       <button
                         style={{ marginLeft: 3 }}
-                        title={t("editarCampo")}
+                        title={t("panelProductos.editarCampo")}
                         onClick={() => editarCampo(campo)}
                       >
                         ✎
                       </button>
                       <button
                         style={{ marginLeft: 2 }}
-                        title={t("eliminarCampo")}
+                        title={t("panelProductos.eliminarCampo")}
                         onClick={() => eliminarCampo(campo)}
                       >
                         🗑️
@@ -645,7 +645,7 @@ function PanelProductos() {
               boxShadow: "0 2px 8px #b4e2c5",
             }}
           >
-            {t("agregarProducto")}
+            {t("panelProductos.agregarProducto")}
           </button>
           <div
             style={{
@@ -657,20 +657,20 @@ function PanelProductos() {
               maxWidth: 500,
             }}
           >
-            {t("agregarCampoExtra")}
+            {t("panelProductos.agregarCampoExtra")}
             <br />
             <input
               value={nuevoCampo}
               onChange={(e) => setNuevoCampo(e.target.value)}
-              placeholder={t("placeholderCampo")}
+              placeholder={t("panelProductos.placeholderCampo")}
               style={{ marginRight: 6 }}
             />
-            <button onClick={agregarCampo}>{t("agregarCampo")}</button>
+            <button onClick={agregarCampo}>{t("panelProductos.agregarCampo")}</button>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 300 }}>
           <h3 style={{ marginBottom: 10 }}>
-            {t("previewProductoTienda")}
+            {t("panelProductos.previewProductoTienda")}
           </h3>
           <PreviewProducto producto={nuevo} config={configTienda} />
         </div>
@@ -685,7 +685,7 @@ function PanelProductos() {
           justifyContent: "space-between",
         }}
       >
-        {t("listaProductos")}
+        {t("panelProductos.listaProductos")}
         <button
           onClick={exportarExcel}
           style={{
@@ -700,7 +700,7 @@ function PanelProductos() {
             boxShadow: "0 1px 5px #a4c2e7",
           }}
         >
-          {t("exportarExcel")}
+          {t("panelProductos.exportarExcel")}
         </button>
       </h2>
       <div style={{ overflowX: "auto", maxWidth: "100vw" }}>
@@ -737,14 +737,14 @@ function PanelProductos() {
                       {campo}
                       <button
                         style={{ marginLeft: 3 }}
-                        title={t("editarCampo")}
+                        title={t("panelProductos.editarCampo")}
                         onClick={() => editarCampo(campo)}
                       >
                         ✎
                       </button>
                       <button
                         style={{ marginLeft: 2 }}
-                        title={t("eliminarCampo")}
+                        title={t("panelProductos.eliminarCampo")}
                         onClick={() => eliminarCampo(campo)}
                       >
                         🗑️
@@ -761,7 +761,7 @@ function PanelProductos() {
                     color: "#337ab7",
                     cursor: "pointer",
                   }}
-                  title={t("ayudaVisible")}
+                  title={t("panelProductos.ayudaVisible")}
                 >
                   ❓
                 </span>

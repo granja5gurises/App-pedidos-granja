@@ -11,8 +11,12 @@ import {
   query
 } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+
 import { useTranslation } from 'react-i18next';
 import BotonVolver from './BotonVolver';
+import panelStyles from '../../estilos/panelStyles';
 
 const IMG_PLACEHOLDER = "https://cdn-icons-png.flaticon.com/512/1356/1356661.png";
 
@@ -47,6 +51,7 @@ function PanelCombos() {
 
   const [error, setError] = useState("");
   const inputEdit = useRef(null);
+  const combosListRef = useRef(null); 
 
   // Buscador
   const [busquedaProducto, setBusquedaProducto] = useState("");
@@ -78,7 +83,7 @@ function PanelCombos() {
   const cargarSecciones = async () => {
     const q = query(collection(db, "secciones"), orderBy("orden", "asc"));
     const snap = await getDocs(q);
-    const arr = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+    const arr = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setSecciones(arr);
   };
 
@@ -121,19 +126,35 @@ function PanelCombos() {
 
   // Manejo de productos en combo (alta)
   const handleCantidad = (productoId, cant) => {
+    const cantidadNumerica = Number(cant);
     setNuevo(n => {
-      const productos = n.productos.filter(p => p.productoId !== productoId);
-      if (cant > 0) productos.push({ productoId, cantidad: Number(cant) });
-      return { ...n, productos };
+      const productosActualizados = n.productos.filter(p => p.productoId !== productoId);
+      if (!isNaN(cantidadNumerica) && cantidadNumerica > 0) {
+        productosActualizados.push({ productoId, cantidad: cantidadNumerica });
+      } else if (cant === '' || cant === null || cant === undefined || (isNaN(cantidadNumerica) && cant !== '0')) {
+        const existingProduct = n.productos.find(p => p.productoId === productoId);
+        if (existingProduct) {
+          productosActualizados.push({ productoId, cantidad: cant });
+        }
+      }
+      return { ...n, productos: productosActualizados };
     });
   };
 
   // Manejo de productos en combo (edición)
   const handleCantidadEdit = (productoId, cant) => {
+    const cantidadNumerica = Number(cant);
     setEditCombo(e => {
-      const productos = e.productos.filter(p => p.productoId !== productoId);
-      if (cant > 0) productos.push({ productoId, cantidad: Number(cant) });
-      return { ...e, productos };
+      const productosActualizados = e.productos.filter(p => p.productoId !== productoId);
+      if (!isNaN(cantidadNumerica) && cantidadNumerica > 0) {
+        productosActualizados.push({ productoId, cantidad: cantidadNumerica });
+      } else if (cant === '' || cant === null || cant === undefined || (isNaN(cantidadNumerica) && cant !== '0')) {
+        const existingProduct = e.productos.find(p => p.productoId === productoId);
+        if (existingProduct) {
+          productosActualizados.push({ productoId, cantidad: cant });
+        }
+      }
+      return { ...e, productos: productosActualizados };
     });
   };
 
@@ -159,7 +180,9 @@ function PanelCombos() {
   // Crear nuevo combo
   const handleNuevoCombo = async () => {
     setError("");
-    if (!nuevo.nombre.trim() || !nuevo.productos.length || !nuevo.stock || !nuevo.seccionId) {
+    const productosValidos = nuevo.productos.filter(p => !isNaN(Number(p.cantidad)) && Number(p.cantidad) > 0);
+    
+    if (!nuevo.nombre.trim() || productosValidos.length === 0 || !nuevo.stock || !nuevo.seccionId) {
       setError(t("combos.errorCompleta"));
       return;
     }
@@ -171,57 +194,92 @@ function PanelCombos() {
       setError(t("combos.errorDescuento"));
       return;
     }
-    // Calcula el precio redondeado final para guardar
-    const precios = calcularPrecios(nuevo.productos, nuevo.descuento);
-    await addDoc(collection(db, "combos"), {
-      ...nuevo,
-      descuento: Number(nuevo.descuento),
-      stock: Number(nuevo.stock),
-      oculto: false,
-      seccionId: nuevo.seccionId,
-      precioFinal: precios.redondeado
-    });
-    setNuevo({
-      nombre: "",
-      descripcion: "",
-      imagen: "",
-      productos: [],
-      descuento: 0,
-      stock: "",
-      oculto: false,
-      seccionId: ""
-    });
-    cargarCombos();
+    
+    const precios = calcularPrecios(productosValidos, nuevo.descuento);
+    try {
+      await addDoc(collection(db, "combos"), {
+        ...nuevo,
+        productos: productosValidos,
+        descuento: Number(nuevo.descuento),
+        stock: Number(nuevo.stock),
+        oculto: false,
+        seccionId: nuevo.seccionId,
+        precioFinal: precios.redondeado
+      });
+      setNuevo({
+        nombre: "",
+        descripcion: "",
+        imagen: "",
+        productos: [],
+        descuento: 0,
+        stock: "",
+        oculto: false,
+        seccionId: ""
+      });
+      cargarCombos();
+    } catch (e) {
+      console.error("Error adding document: ", e);
+      setError(t("combos.errorGeneral") + " " + e.message);
+    }
   };
 
   // Eliminar combo
   const handleEliminarCombo = async (id) => {
+    if (!id) {
+      console.error("Attempted to delete with invalid ID:", id);
+      setError(t("combos.errorEliminarInvalidId"));
+      return;
+    }
     if (window.confirm(t("combos.confirmEliminar"))) {
-      await deleteDoc(doc(db, "combos", id));
-      cargarCombos();
+      try {
+        await deleteDoc(doc(db, "combos", id));
+        cargarCombos();
+      } catch (e) {
+        console.error("Error deleting document: ", e);
+        setError(t("combos.errorGeneral") + " " + e.message);
+      }
     }
   };
 
   // Ocultar/mostrar combo
   const alternarOcultoCombo = async (id, oculto) => {
-    await updateDoc(doc(db, "combos", id), { oculto: !oculto });
-    cargarCombos();
+    if (!id) {
+      console.error("Attempted to toggle visibility with invalid ID:", id);
+      setError(t("combos.errorAlternarVisibilidadInvalidId"));
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "combos", id), { oculto: !oculto });
+      cargarCombos();
+    } catch (e) {
+      console.error("Error updating document visibility: ", e);
+      setError(t("combos.errorGeneral") + " " + e.message);
+    }
   };
 
   // Iniciar edición
   const iniciarEdicion = (combo) => {
     setEditId(combo.id);
+    const productosParaEdicion = combo.productos.map(p => ({
+        ...p,
+        cantidad: p.cantidad !== '' && p.cantidad !== null ? Number(p.cantidad) : ''
+    }));
+
     setEditCombo({
       nombre: combo.nombre,
       descripcion: combo.descripcion || "",
       imagen: combo.imagen || "",
-      productos: combo.productos || [],
+      productos: productosParaEdicion || [],
       descuento: combo.descuento || 0,
       stock: combo.stock || "",
       oculto: combo.oculto || false,
       seccionId: combo.seccionId || ""
     });
-    setTimeout(() => inputEdit.current?.focus(), 200);
+    setTimeout(() => {
+        if(inputEdit.current) {
+            inputEdit.current.focus();
+        }
+    }, 200);
   };
 
   const cancelarEdicion = () => {
@@ -242,7 +300,14 @@ function PanelCombos() {
   // Guardar edición
   const guardarEdicion = async () => {
     setError("");
-    if (!editCombo.nombre.trim() || !editCombo.productos.length || !editCombo.stock || !editCombo.seccionId) {
+    if (!editId) {
+        console.error("Attempted to save edit with no selected combo (editId is null).");
+        setError(t("combos.errorGuardarEdicionNoId"));
+        return;
+    }
+    const productosValidos = editCombo.productos.filter(p => !isNaN(Number(p.cantidad)) && Number(p.cantidad) > 0);
+
+    if (!editCombo.nombre.trim() || productosValidos.length === 0 || !editCombo.stock || !editCombo.seccionId) {
       setError(t("combos.errorCompleta"));
       return;
     }
@@ -260,22 +325,28 @@ function PanelCombos() {
       setError(t("combos.errorDescuento"));
       return;
     }
-    const precios = calcularPrecios(editCombo.productos, editCombo.descuento);
-    await updateDoc(doc(db, "combos", editId), {
-      ...editCombo,
-      descuento: Number(editCombo.descuento),
-      stock: Number(editCombo.stock),
-      seccionId: editCombo.seccionId,
-      precioFinal: precios.redondeado
-    });
-    cancelarEdicion();
-    cargarCombos();
+    const precios = calcularPrecios(productosValidos, editCombo.descuento);
+    try {
+      await updateDoc(doc(db, "combos", editId), {
+        ...editCombo,
+        productos: productosValidos,
+        descuento: Number(editCombo.descuento),
+        stock: Number(editCombo.stock),
+        seccionId: editCombo.seccionId,
+        precioFinal: precios.redondeado
+      });
+      cancelarEdicion();
+      cargarCombos();
+    } catch (e) {
+      console.error("Error saving document: ", e);
+      setError(t("combos.errorGeneral") + " " + e.message);
+    }
   };
 
   // Exportar a Excel
   const exportarExcel = () => {
     if (combos.length === 0) {
-      alert(t("combos.errorExportar"));
+      alert(t("combos.noCombosExportar"));
       return;
     }
     const data = combos.map(combo => ({
@@ -297,6 +368,51 @@ function PanelCombos() {
     XLSX.writeFile(wb, "combos.xlsx");
   };
 
+  // Función para Exportar a PDF
+  const exportarPDF = async () => {
+    if (!combosListRef.current) {
+        console.error("Referencia al contenedor de combos no encontrada.");
+        alert(t("combos.errorPDFNoElement"));
+        return;
+    }
+    if (combos.length === 0) {
+        alert(t("combos.noCombosExportar"));
+        return;
+    }
+
+    try {
+        const canvas = await html2canvas(combosListRef.current, { 
+            scale: 2,
+            useCORS: true
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgProps= pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+        let position = 0;
+        let heightLeft = pdfHeight;
+
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pdf.internal.pageSize.getHeight();
+
+        while (heightLeft >= 0) {
+            position = heightLeft - pdf.internal.pageSize.getHeight(); // Ajuste aquí para la posición en la nueva página
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+            heightLeft -= pdf.internal.pageSize.getHeight();
+        }
+
+        pdf.save(t("combos.archivoPDF") + ".pdf");
+    } catch (e) {
+        console.error("Error al exportar a PDF:", e);
+        alert(t("combos.errorGeneralPDF"));
+    }
+  };
+
+
   // Opciones de múltiplos para redondeo
   const opcionesMultiplo = [
     { label: t("combos.unidad"), value: 1 },
@@ -309,58 +425,39 @@ function PanelCombos() {
   const preciosMostrados = calcularPrecios(nuevo.productos, nuevo.descuento);
 
   return (
-    <div style={{ padding: 20, maxWidth: 1200, margin: "auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-        <h2 style={{ marginBottom: 0 }}>{t("combos.titulo")}</h2>
+    <div style={panelStyles.contenedor}>
+      <div style={panelStyles.headerSuperior}>
+        <h2 style={{ margin: 0 }}>{t("combos.titulo")}</h2>
         <BotonVolver ruta="/dashboard-admin" />
       </div>
-      <button
-        onClick={exportarExcel}
-        style={{
-          background: "#1976d2",
-          color: "#fff",
-          border: "none",
-          padding: "7px 18px",
-          borderRadius: 6,
-          fontWeight: 600,
-          fontSize: 15,
-          cursor: "pointer",
-          boxShadow: "0 1px 5px #a4c2e7",
-          marginBottom: 16
-        }}
-      >
-        {t("combos.exportarExcel")}
-      </button>
+      <div style={{display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap'}}> {/* Contenedor para los botones de exportar */}
+        <button
+          onClick={exportarExcel}
+          style={panelStyles.botonExportar}
+        >
+          {t("combos.exportarExcel")}
+        </button>
+        <button
+          onClick={exportarPDF}
+          style={panelStyles.botonExportarPDF}
+        >
+          {t("combos.exportarPDF")}
+        </button>
+      </div>
       {productos.length === 0 && (
-        <div style={{
-          background: "#fff3cd",
-          border: "1px solid #ffeeba",
-          color: "#856404",
-          padding: 10,
-          borderRadius: 7,
-          fontSize: 15,
-          marginBottom: 18
-        }}>
+        <div style={panelStyles.alertaInfo}>
           <b>{t("combos.ayudaCarga")}</b>
         </div>
       )}
-      <div style={{
-        display: "flex",
-        gap: 12,
-        alignItems: "flex-end",
-        background: "#eaf7ea",
-        padding: 12,
-        borderRadius: 8,
-        maxWidth: 880,
-        marginBottom: 10,
-        flexWrap: "wrap"
-      }}>
+      {/* SECCIÓN DE AGREGAR NUEVO COMBO */}
+      {/* Se eliminó el comentario problemático y se aseguró el layout con panelStyles.tarjetaVerdeClaro */}
+      <div style={panelStyles.tarjetaVerdeClaro}>
         {/* CATEGORIA LABEL + SELECT + TOOLTIP */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>
             {t("combos.categoria")}
             <span
-              style={{ marginLeft: 4, color: "#2976d1", cursor: "pointer" }}
+              style={panelStyles.tooltipIcon}
               title={t("combos.ayudaCategoria")}
             >
               ❓
@@ -369,7 +466,7 @@ function PanelCombos() {
           <select
             value={nuevo.seccionId || ""}
             onChange={e => setNuevo({ ...nuevo, seccionId: e.target.value })}
-            style={{ minWidth: 140, marginTop: 2 }}
+            style={panelStyles.input}
           >
             <option value="">{t("combos.elegiCategoria")}</option>
             {secciones.map(sec => (
@@ -377,51 +474,51 @@ function PanelCombos() {
             ))}
           </select>
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>{t("combos.nombre")}</label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>{t("combos.nombre")}</label>
           <input
             placeholder={t("combos.placeholderNombre")}
             value={nuevo.nombre}
             onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })}
-            style={{ minWidth: 140 }}
+            style={panelStyles.input}
           />
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>{t("combos.imagen")}</label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>{t("combos.imagen")}</label>
           <input
             placeholder={t("combos.placeholderImagen")}
             value={nuevo.imagen}
             onChange={e => setNuevo({ ...nuevo, imagen: e.target.value })}
-            style={{ minWidth: 160 }}
+            style={panelStyles.input} // Usando input general para que use width: 100%
           />
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>{t("combos.stock")}</label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>{t("combos.stock")}</label>
           <input
             placeholder={t("combos.placeholderStock")}
             type="number"
             value={nuevo.stock}
             onChange={e => setNuevo({ ...nuevo, stock: e.target.value })}
-            style={{ width: 75 }}
+            style={panelStyles.inputChico}
           />
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>{t("combos.descuento")}</label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>{t("combos.descuento")}</label>
           <input
             type="number"
             value={nuevo.descuento}
             onChange={e => setNuevo({ ...nuevo, descuento: e.target.value })}
-            style={{ width: 65 }}
+            style={panelStyles.inputChico}
             min={0}
             max={99}
           />
         </div>
         {/* Redondeo */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <label>
+        <div style={panelStyles.flexColumn}>
+          <label style={panelStyles.label}>
             {t("combos.redondeo")}
             <span
-              style={{ marginLeft: 4, color: "#2976d1", cursor: "pointer" }}
+              style={panelStyles.tooltipIcon}
               title={t("combos.ayudaRedondeo")}
             >❓</span>
           </label>
@@ -429,7 +526,7 @@ function PanelCombos() {
             <select
               value={redondeoTipo}
               onChange={e => setRedondeoTipo(e.target.value)}
-              style={{ width: 70 }}
+              style={panelStyles.inputChico}
             >
               <option value="arriba">{t("combos.arriba")}</option>
               <option value="abajo">{t("combos.abajo")}</option>
@@ -437,7 +534,7 @@ function PanelCombos() {
             <select
               value={redondeoMultiplo}
               onChange={e => setRedondeoMultiplo(Number(e.target.value))}
-              style={{ width: 115 }}
+              style={panelStyles.inputChico}
             >
               {opcionesMultiplo.map(o =>
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -448,24 +545,17 @@ function PanelCombos() {
       </div>
 
       {/* --- CARGA RÁPIDA: lista completa --- */}
-      <div style={{
-        background: "#f5f7f7",
-        border: "1px solid #c6e2d7",
-        padding: 12,
-        borderRadius: 8,
-        maxWidth: 880,
-        marginBottom: 8
-      }}>
+      <div style={panelStyles.tarjetaGrisClaro}>
         <div style={{ fontWeight: 600, marginBottom: 5 }}>{t("combos.cargaRapida")}</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        <div style={panelStyles.flexGap12Wrap}>
           {productos.map(p => (
-            <div key={p.id} style={{ minWidth: 150, marginBottom: 2 }}>
-              <span style={{ fontWeight: 500 }}>{p.nombre}</span>{" "}
-              <span style={{ fontSize: 13, color: "#666" }}>({p.unidad || ""})</span>
+            <div key={p.id} style={panelStyles.productoItemCantidad}>
+              <span style={panelStyles.productoNombreUnidad}>{p.nombre}</span>{" "}
+              <span style={panelStyles.productoUnidad}>({p.unidad || ""})</span>
               <input
                 type="number"
                 min={0}
-                style={{ width: 50, marginLeft: 8 }}
+                style={panelStyles.inputChico}
                 value={nuevo.productos.find(x => x.productoId === p.id)?.cantidad || ""}
                 onChange={e => handleCantidad(p.id, e.target.value)}
                 placeholder={t("combos.cant")}
@@ -476,32 +566,18 @@ function PanelCombos() {
       </div>
 
       {/* --- BÚSQUEDA AVANZADA --- */}
-      <div style={{
-        background: "#eaf1f7",
-        border: "1px solid #a7c8e7",
-        padding: 12,
-        borderRadius: 8,
-        maxWidth: 880,
-        marginBottom: 8
-      }}>
+      <div style={panelStyles.tarjetaAzulClaro}>
         <div style={{ fontWeight: 600, marginBottom: 5 }}>{t("combos.busquedaAvanzada")}</div>
         <input
           type="text"
           value={busquedaProducto}
           onChange={e => setBusquedaProducto(e.target.value)}
           placeholder={t("combos.buscaProducto")}
-          style={{ width: 320, padding: 6, borderRadius: 4, border: "1px solid #b8b8b8", marginBottom: 6 }}
+          style={panelStyles.inputBusqueda}
         />
         {/* Resultados de búsqueda */}
         {busquedaProducto && (
-          <div style={{
-            background: "#fff",
-            border: "1px solid #d6d6d6",
-            borderRadius: 5,
-            maxHeight: 120,
-            overflowY: "auto",
-            marginBottom: 6
-          }}>
+          <div style={panelStyles.busquedaResultsContenedor}>
             {productos
               .filter(p =>
                 p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) &&
@@ -511,11 +587,7 @@ function PanelCombos() {
               .map(p => (
                 <div
                   key={p.id}
-                  style={{
-                    padding: 5,
-                    cursor: "pointer",
-                    borderBottom: "1px solid #eaeaea"
-                  }}
+                  style={panelStyles.busquedaResultadoItem}
                   onClick={() => agregarProductoBuscado(p.id)}
                 >
                   {p.nombre} <span style={{ fontSize: 12, color: "#888" }}>({p.unidad || ""})</span>
@@ -525,7 +597,9 @@ function PanelCombos() {
               p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) &&
               !nuevo.productos.some(x => x.productoId === p.id)
             ).length === 0 && (
-              <div style={{ padding: 6, color: "#999" }}>{t("combos.sinResultados")}</div>
+              <div style={panelStyles.busquedaSinResults}>
+                {t("combos.sinResultados")}
+              </div>
             )}
           </div>
         )}
@@ -539,7 +613,7 @@ function PanelCombos() {
         ).length > 0 && (
           <div style={{ marginTop: 4 }}>
             <div style={{ fontWeight: 500, marginBottom: 2 }}>{t("combos.seleccionados")}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+            <div style={panelStyles.flexGap12Wrap}>
               {nuevo.productos
                 .filter(x =>
                   productos.some(p =>
@@ -550,29 +624,20 @@ function PanelCombos() {
                 .map(item => {
                   const p = productos.find(pp => pp.id === item.productoId);
                   return (
-                    <div key={item.productoId} style={{
-                      border: "1px solid #c6c6c6",
-                      borderRadius: 6,
-                      padding: "5px 12px",
-                      display: "flex",
-                      alignItems: "center",
-                      background: "#fff"
-                    }}>
-                      <span style={{ fontWeight: 500 }}>{p?.nombre}</span>
+                    <div key={item.productoId} style={panelStyles.productoSeleccionadoItem}>
+                      <span style={panelStyles.productoNombreUnidad}>{p?.nombre}</span>
                       <input
                         type="number"
                         min={0}
+                        style={{ ...panelStyles.inputChico, width: 50, margin: "0 7px" }}
                         value={item.cantidad}
                         onChange={e => handleCantidad(p.id, e.target.value)}
-                        style={{ width: 50, margin: "0 7px" }}
                         placeholder={t("combos.cant")}
                       />
-                      <span style={{ fontSize: 13, color: "#666" }}>{p?.unidad || ""}</span>
+                      <span style={panelStyles.productoUnidad}>{p?.unidad || ""}</span>
                       <button
                         onClick={() => quitarProductoBuscado(item.productoId)}
-                        style={{
-                          marginLeft: 10, color: "#c71111", border: "none", background: "none", cursor: "pointer", fontSize: 18
-                        }}
+                        style={panelStyles.botonQuitarProducto}
                         title={t("combos.quitar")}
                       >✖️</button>
                     </div>
@@ -584,233 +649,210 @@ function PanelCombos() {
       </div>
 
       {/* --- PRECIOS EN TIEMPO REAL --- */}
-      <div style={{
-        background: "#fff",
-        border: "1px solid #e1e1e1",
-        borderRadius: 8,
-        padding: 10,
-        margin: "14px 0 8px 0",
-        maxWidth: 340,
-        fontSize: 16,
-        lineHeight: 1.7
-      }}>
+      <div style={panelStyles.tarjetaPrecios}>
         <div>
-          <span style={{ fontWeight: 600 }}>{t("combos.precioBase")}</span>{" "}
+          <span style={panelStyles.precioResumen}>{t("combos.precioBase")}</span>{" "}
           ${preciosMostrados.base.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
         </div>
         <div>
-          <span style={{ fontWeight: 600 }}>{t("combos.precioDescuento")}</span>{" "}
+          <span style={panelStyles.precioResumen}>{t("combos.precioDescuento")}</span>{" "}
           ${preciosMostrados.descuento.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
         </div>
         <div>
-          <span style={{ fontWeight: 600 }}>{t("combos.precioRedondeado")}</span>{" "}
-          <span style={{ color: "#127312", fontWeight: 700 }}>
+          <span style={panelStyles.precioResumen}>{t("combos.precioRedondeado")}</span>{" "}
+          <span style={panelStyles.precioFinalDestacado}>
             ${preciosMostrados.redondeado.toLocaleString("es-AR", { minimumFractionDigits: 0 })}
           </span>
         </div>
       </div>
 
       <button
-        style={{
-          margin: "10px 0 20px 0",
-          padding: "7px 28px",
-          background: "#4caf50",
-          color: "#fff",
-          fontWeight: "bold",
-          border: "none",
-          borderRadius: 6,
-          fontSize: 17,
-          cursor: "pointer",
-          boxShadow: "0 2px 8px #b4e2c5"
-        }}
+        style={panelStyles.botonGuardar}
         onClick={handleNuevoCombo}
       >
         {t("combos.agregarCombo")}
       </button>
-      {error && <div style={{ color: "#d00021", marginBottom: 8 }}>{error}</div>}
+      {error && <div style={panelStyles.alertaError}>{error}</div>}
       <hr />
       <h2>{t("combos.lista")}</h2>
       {combos.length === 0 && (
-        <div style={{
-          background: "#eef0f4",
-          border: "1px solid #c1c1c1",
-          color: "#555",
-          padding: 8,
-          borderRadius: 6,
-          fontSize: 15,
-          marginBottom: 12
-        }}>
+        <div style={panelStyles.sinRegistros}>
           {t("combos.noCombos")}
         </div>
       )}
-      <div style={{ overflowX: "auto" }}>
-        <table border="1" cellPadding={7} style={{ minWidth: 970, background: "#fff" }}>
-          <thead style={{ background: "#e3e8f0" }}>
-            <tr>
-              <th>{t("combos.categoria")}</th>
-              <th>{t("combos.nombre")}</th>
-              <th>{t("combos.imagen")}</th>
-              <th>{t("combos.descripcion")}</th>
-              <th>{t("combos.stock")}</th>
-              <th>{t("combos.descuento")}</th>
-              <th>{t("combos.productos")}</th>
-              <th>{t("combos.precioFinal")}</th>
-              <th>{t("combos.visible")}</th>
-              <th>{t("combos.acciones")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {combos.map(combo =>
-              editId === combo.id ? (
-                <tr key={combo.id} style={{ background: "#f5f7f9" }}>
-                  {/* CATEGORIA EN EDICION */}
-                  <td>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      <label>
-                        {t("combos.categoria")}
-                        <span
-                          style={{ marginLeft: 4, color: "#2976d1", cursor: "pointer" }}
-                          title={t("combos.ayudaCategoria")}
-                        >
-                          ❓
-                        </span>
-                      </label>
-                      <select
-                        value={editCombo.seccionId || ""}
-                        onChange={e => setEditCombo({ ...editCombo, seccionId: e.target.value })}
-                        style={{ minWidth: 110, marginTop: 2 }}
-                      >
-                        <option value="">{t("combos.elegiCategoria")}</option>
-                        {secciones.map(sec => (
-                          <option key={sec.id} value={sec.id}>{sec.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </td>
-                  <td>
-                    <input
-                      ref={inputEdit}
-                      value={editCombo.nombre}
-                      onChange={e => setEditCombo({ ...editCombo, nombre: e.target.value })}
-                      style={{ minWidth: 110 }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      placeholder={t("combos.placeholderImagen")}
-                      value={editCombo.imagen}
-                      onChange={e => setEditCombo({ ...editCombo, imagen: e.target.value })}
-                      style={{ minWidth: 90 }}
-                    />
-                    <img
-                      src={editCombo.imagen || IMG_PLACEHOLDER}
-                      alt=""
-                      width={38}
-                      style={{ borderRadius: 8, border: "1px solid #ccc", marginLeft: 6, verticalAlign: "middle" }}
-                    />
-                  </td>
-                  <td>
-                    <textarea
-                      value={editCombo.descripcion}
-                      onChange={e => setEditCombo({ ...editCombo, descripcion: e.target.value })}
-                      style={{ width: 120, minHeight: 30 }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      value={editCombo.stock}
-                      onChange={e => setEditCombo({ ...editCombo, stock: e.target.value })}
-                      style={{ width: 60 }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      value={editCombo.descuento}
-                      onChange={e => setEditCombo({ ...editCombo, descuento: e.target.value })}
-                      style={{ width: 45 }}
-                      min={0}
-                      max={99}
-                    /> %
-                  </td>
-                  <td>
+      
+      {/* Nuevo contenedor para las tarjetas de combos */}
+      <div ref={combosListRef} style={panelStyles.listaTarjetasCombos}>
+        {combos.map((combo, index) =>
+          editId === combo.id ? (
+            // Tarjeta de edición
+            <div key={combo.id} style={panelStyles.comboCardEdit}>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.categoria")}</label>
+                  <select
+                    value={editCombo.seccionId || ""}
+                    onChange={e => setEditCombo({ ...editCombo, seccionId: e.target.value })}
+                    style={panelStyles.inputChico}
+                  >
+                    <option value="">{t("combos.elegiCategoria")}</option>
+                    {secciones.map(sec => (
+                      <option key={sec.id} value={sec.id}>{sec.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.nombre")}</label>
+                  <input
+                    ref={inputEdit}
+                    value={editCombo.nombre}
+                    onChange={e => setEditCombo({ ...editCombo, nombre: e.target.value })}
+                    style={panelStyles.input}
+                  />
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.imagen")}</label>
+                  <div style={{display: 'flex', alignItems: 'center', gap: 5}}>
+                      <input
+                        placeholder={t("combos.placeholderImagen")}
+                        value={editCombo.imagen}
+                        onChange={e => setEditCombo({ ...editCombo, imagen: e.target.value })}
+                        style={panelStyles.input} // Usando input general
+                      />
+                      <img
+                        src={editCombo.imagen || IMG_PLACEHOLDER}
+                        alt=""
+                        width={38}
+                        style={panelStyles.tablaImagenCombo}
+                      />
+                  </div>
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.descripcion")}</label>
+                  <textarea
+                    value={editCombo.descripcion}
+                    onChange={e => setEditCombo({ ...editCombo, descripcion: e.target.value })}
+                    style={{ ...panelStyles.inputTabla, width: '100%', minHeight: 30 }}
+                  />
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.stock")}</label>
+                  <input
+                    type="number"
+                    value={editCombo.stock}
+                    onChange={e => setEditCombo({ ...editCombo, stock: e.target.value })}
+                    style={panelStyles.inputChico}
+                  />
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.descuento")}</label>
+                  <input
+                    type="number"
+                    value={editCombo.descuento}
+                    onChange={e => setEditCombo({ ...editCombo, descuento: e.target.value })}
+                    style={panelStyles.inputChico}
+                    min={0}
+                    max={99}
+                  /> %
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.productos")}</label>
+                  <ul style={panelStyles.listaProductosCombo}>
                     {productos.map(p => (
-                      <div key={p.id}>
-                        <span>{p.nombre} <span style={{ fontSize: 12, color: "#666" }}>({p.unidad || ""})</span></span>
+                      <li key={p.id}>
+                        <span>{p.nombre} <span style={panelStyles.productoUnidad}>({p.unidad || ""})</span></span>
                         <input
                           type="number"
                           min={0}
-                          style={{ width: 40, marginLeft: 8 }}
+                          style={{ ...panelStyles.inputChico, width: 40, marginLeft: 8 }}
                           value={editCombo.productos.find(x => x.productoId === p.id)?.cantidad || ""}
                           onChange={e => handleCantidadEdit(p.id, e.target.value)}
                           placeholder={t("combos.cant")}
                         />
-                      </div>
+                      </li>
                     ))}
-                  </td>
-                  <td>
+                  </ul>
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.precioFinal")}</label>
+                  <span style={{fontWeight: 'bold'}}>
                     ${calcularPrecios(editCombo.productos, editCombo.descuento).redondeado}
-                  </td>
-                  <td>
-                    <span style={{ color: combo.oculto ? "crimson" : "green" }}>
-                      {combo.oculto ? t("combos.oculto") : t("combos.visibleEstado")}
-                    </span>
-                  </td>
-                  <td>
-                    <button onClick={guardarEdicion} style={{ marginRight: 5 }}>{t("combos.guardar")}</button>
-                    <button onClick={cancelarEdicion}>{t("combos.cancelar")}</button>
-                  </td>
-                </tr>
-              ) : (
-                <tr key={combo.id}>
-                  <td>{secciones.find(sec => sec.id === combo.seccionId)?.nombre || "-"}</td>
-                  <td>{combo.nombre}</td>
-                  <td>
+                  </span>
+                </div>
+                <div style={panelStyles.cardField}>
+                  <label style={panelStyles.label}>{t("combos.visible")}</label>
+                  <span style={combo.oculto ? panelStyles.estadoOculto : panelStyles.estadoVisible}>
+                    {combo.oculto ? t("combos.oculto") : t("combos.visibleEstado")}
+                  </span>
+                </div>
+                <div style={panelStyles.cardActions}>
+                  <button onClick={guardarEdicion} style={panelStyles.botonGuardar}>{t("combos.guardar")}</button>
+                  <button onClick={cancelarEdicion} style={panelStyles.botonCancelar}>{t("combos.cancelar")}</button>
+                </div>
+            </div>
+          ) : (
+            // Tarjeta de visualización
+            <div key={combo.id} style={panelStyles.comboCard}>
+                <div style={panelStyles.cardImageContainer}>
                     <img
-                      src={combo.imagen || IMG_PLACEHOLDER}
-                      alt=""
-                      width={38}
-                      style={{ borderRadius: 8, border: "1px solid #ccc" }}
+                        src={combo.imagen || IMG_PLACEHOLDER}
+                        alt={combo.nombre}
+                        style={panelStyles.cardImage}
                     />
-                  </td>
-                  <td style={{ maxWidth: 130, fontSize: 13, color: "#444" }}>{combo.descripcion}</td>
-                  <td>{combo.stock}</td>
-                  <td>{combo.descuento}%</td>
-                  <td>
-                    <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                      {combo.productos.map(item =>
-                        <li key={item.productoId}>
-                          {getNombreUnidad(item.productoId)} x{item.cantidad}
-                        </li>
-                      )}
-                    </ul>
-                  </td>
-                  <td>
-                    ${combo.precioFinal || calcularPrecios(combo.productos, combo.descuento).redondeado}
-                  </td>
-                  <td>
-                    {combo.oculto ? (
-                      <span style={{ color: "crimson" }}>{t("combos.oculto")}</span>
-                    ) : (
-                      <span style={{ color: "green" }}>{t("combos.visibleEstado")}</span>
+                </div>
+                <div style={panelStyles.cardContent}>
+                    <h3 style={panelStyles.cardTitle}>{combo.nombre}</h3>
+                    <p style={panelStyles.cardText}>
+                        <strong>{t("combos.categoria")}:</strong> {secciones.find(sec => sec.id === combo.seccionId)?.nombre || "-"}
+                    </p>
+                    {combo.descripcion && (
+                        <p style={panelStyles.cardText}>
+                            <strong>{t("combos.descripcion")}:</strong> {combo.descripcion}
+                        </p>
                     )}
+                    <p style={panelStyles.cardText}>
+                        <strong>{t("combos.stock")}:</strong> {combo.stock}
+                    </p>
+                    <p style={panelStyles.cardText}>
+                        <strong>{t("combos.descuento")}:</strong> {combo.descuento}%
+                    </p>
+                    <div style={panelStyles.cardText}>
+                        <strong>{t("combos.productos")}:</strong>
+                        <ul style={panelStyles.listaProductosCombo}>
+                            {combo.productos.map(item =>
+                                <li key={item.productoId}>
+                                    {getNombreUnidad(item.productoId)} x{item.cantidad}
+                                </li>
+                            )}
+                        </ul>
+                    </div>
+                    <p style={panelStyles.cardText}>
+                        <strong>{t("combos.precioFinal")}:</strong>{" "}
+                        <span style={panelStyles.precioFinalDestacado}>
+                            ${combo.precioFinal || calcularPrecios(combo.productos, combo.descuento).redondeado}
+                        </span>
+                    </p>
+                    <p style={panelStyles.cardText}>
+                        <strong>{t("combos.visible")}:</strong>{" "}
+                        {combo.oculto ? (
+                            <span style={panelStyles.estadoOculto}>{t("combos.oculto")}</span>
+                        ) : (
+                            <span style={panelStyles.estadoVisible}>{t("combos.visibleEstado")}</span>
+                        )}
+                    </p>
+                </div>
+                <div style={panelStyles.cardActions}>
+                    <button onClick={() => iniciarEdicion(combo)} style={panelStyles.botonEditarColumna}>{t("combos.editar")}</button>
+                    <button style={panelStyles.botonEliminarFila} onClick={() => handleEliminarCombo(combo.id)}>{t("combos.eliminar")}</button>
                     <button
-                      style={{ marginLeft: 8, fontSize: 12 }}
-                      onClick={() => alternarOcultoCombo(combo.id, combo.oculto)}
+                        style={panelStyles.botonAlternarVisibilidad}
+                        onClick={() => alternarOcultoCombo(combo.id, combo.oculto)}
                     >
-                      {combo.oculto ? t("combos.mostrar") : t("combos.ocultar")}
+                        {combo.oculto ? t("combos.mostrar") : t("combos.ocultar")}
                     </button>
-                  </td>
-                  <td>
-                    <button onClick={() => iniciarEdicion(combo)} style={{ marginRight: 5 }}>{t("combos.editar")}</button>
-                    <button style={{ color: "red" }} onClick={() => handleEliminarCombo(combo.id)}>{t("combos.eliminar")}</button>
-                  </td>
-                </tr>
-              )
-            )}
-          </tbody>
-        </table>
+                </div>
+            </div>
+          )
+        )}
       </div>
     </div>
   );

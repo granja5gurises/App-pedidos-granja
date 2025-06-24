@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import useT from "../../locales/useT";
+import { useTranslation } from "react-i18next";
 import useAdminTheme from "../../helpers/useAdminTheme";
 
 export default function BotonVolver({
@@ -7,7 +7,7 @@ export default function BotonVolver({
   texto // si no se pasa, toma del idioma
 }) {
   const navigate = useNavigate();
-  const t = useT();
+  const { t } = useTranslation(); // Traducción correcta
   const config = useAdminTheme();
 
   // Responsive para mobile (posición fija abajo a la derecha si pantalla chica)

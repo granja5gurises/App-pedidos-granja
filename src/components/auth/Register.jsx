@@ -1,80 +1,59 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { useTranslation } from 'react-i18next';
 import { auth, db } from '../../firebase';
-import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
-
-// Textos centralizados para internacionalización
-const texts = {
-  titulo: "Registro",
-  registrarse: "Registrarse",
-  cargando: "Cargando formulario...",
-  obligatorio: (label) => `El campo "${label}" es obligatorio`,
-  seleccionar: "Seleccionar...",
-  exito: "Registro exitoso",
-  error: "Error al registrar: "
-};
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 function Register() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const texts = {
+    titulo: t("register.titulo"),
+    registrarse: t("register.registrarse"),
+    cargando: t("register.cargando"),
+    obligatorio: (label) => t("register.obligatorio", { label }),
+    exito: t("register.exito"),
+    error: t("register.error"),
+    volver: t("register.volver")
+  };
 
   const [campos, setCampos] = useState([]);
   const [formData, setFormData] = useState({});
-  const [opciones, setOpciones] = useState({});
   const [cargando, setCargando] = useState(true);
+  const [logo, setLogo] = useState(null);
 
-  // Cargar la config de campos dinámicos al iniciar
   useEffect(() => {
-    const cargarCampos = async () => {
-      // Leer la configuración ACTUAL de campos desde "configuracion/general"
-      const snap = await getDoc(doc(db, "configuracion", "general"));
-      let camposConfig = [];
-      if (snap.exists() && Array.isArray(snap.data().camposRegistro)) {
-        camposConfig = snap.data().camposRegistro;
-      } else {
-        // fallback por si no existe: mínimo para no romper
-        camposConfig = [
-          { nombre: "nombre", tipo: "texto", obligatorio: true, label: "Nombre" },
-          { nombre: "apellido", tipo: "texto", obligatorio: true, label: "Apellido" },
-          { nombre: "direccion", tipo: "texto", obligatorio: true, label: "Dirección" },
-          { nombre: "ciudad", tipo: "lista", obligatorio: true, coleccionOpciones: "ciudades", label: "Ciudad" },
-          { nombre: "email", tipo: "email", obligatorio: true, label: "Email" },
-          { nombre: "password", tipo: "password", obligatorio: true, label: "Contraseña" }
-        ];
-      }
-      setCampos(camposConfig);
+    // Seteo fijo de campos permitidos por reglas
+    const camposConfig = [
+  { nombre: "nombre", tipo: "texto", obligatorio: true, label: t("register.nombre") },
+  { nombre: "apellido", tipo: "texto", obligatorio: true, label: t("register.apellido") },
+  { nombre: "email", tipo: "email", obligatorio: true, label: t("register.email") },
+  { nombre: "password", tipo: "password", obligatorio: true, label: t("register.password") }
+    ];
+    setCampos(camposConfig);
+    setCargando(false);
+  }, []);
 
-      // Traer opciones de cada campo tipo lista
-      for (const campo of camposConfig) {
-        // Si la colección de opciones no está definida, asume plural (ej: ciudad -> ciudades)
-        let coleccion = campo.coleccionOpciones || (campo.tipo === "lista"
-          ? (campo.nombre.endsWith("z")
-              ? campo.nombre.slice(0, -1) + "ces"
-              : campo.nombre + "s")
-          : null);
-
-        if (campo.tipo === "lista" && coleccion) {
-          const snapOpc = await getDocs(collection(db, coleccion));
-          setOpciones(prev => ({
-            ...prev,
-            [campo.nombre]: snapOpc.docs.map(doc => doc.id)
-          }));
-        }
+  useEffect(() => {
+    const fetchLogo = async () => {
+      const snap = await getDoc(doc(db, "configuracion", "estilo"));
+      if (snap.exists() && snap.data().logo) {
+        setLogo(snap.data().logo);
       }
-      setCargando(false);
     };
-    cargarCampos();
+    fetchLogo();
   }, []);
 
   const handleChange = (e) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // Registrar usuario
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validación simple según config
+    // Verifica que todos los campos obligatorios estén completos
     for (const campo of campos) {
       if (campo.obligatorio && !formData[campo.nombre]) {
         alert(texts.obligatorio(campo.label || campo.nombre));
@@ -83,25 +62,29 @@ function Register() {
     }
 
     try {
-      // Registrar en auth si hay email y password
-      let user;
-      if (formData.email && formData.password) {
-        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        user = userCredential.user;
-      }
+      // Crear usuario en Firebase
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const userId = userCredential.user.uid;
+      const { password, ...userData } = formData;
 
-      // Antes de guardar, eliminar el password
-      const userId = user ? user.uid : (formData.email || Date.now().toString());
-      const { password, ...userData } = formData; // Excluir el password
-
+      // Guardar el nuevo usuario en Firestore
       await setDoc(doc(db, 'usuarios', userId), {
         ...userData,
         uid: userId,
-        admin: false // Si querés que admin sea configurable, adaptá esto
+        admin: false
       });
 
+      // Confirmar el registro exitoso
       alert(texts.exito);
-      navigate('/pedido');
+
+      // Verifica si el usuario debe completar su registro y redirige
+      const camposPendientes = campos.filter(campo => !userData[campo.nombre]);
+      if (camposPendientes.length > 0) {
+        navigate('/completar-registro');  // Redirige a completar el registro
+      } else {
+        navigate('/inicio');  // Redirige a la tienda si todo está completo
+      }
+
     } catch (error) {
       alert(texts.error + error.message);
     }
@@ -110,48 +93,69 @@ function Register() {
   if (cargando) return <div>{texts.cargando}</div>;
 
   return (
-    <div>
-      <h2>{texts.titulo}</h2>
-      <form onSubmit={handleSubmit}>
+    <div style={{
+      padding: '2rem',
+      maxWidth: 400,
+      margin: '0 auto',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center'
+    }}>
+      {logo && <img src={logo} alt="logo" style={{ maxWidth: "100px", marginBottom: "1rem" }} />}
+      <h2 style={{ textAlign: 'center', fontSize: '1.8rem', marginBottom: 24 }}>
+        {texts.titulo}
+      </h2>
+
+      <button
+        type="button"
+        onClick={() => navigate('/login')}
+        style={{
+          marginBottom: '1rem',
+          padding: '8px 16px',
+          fontSize: '14px',
+          backgroundColor: '#f0f0f0',
+          color: '#333',
+          border: '1px solid #ccc',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          alignSelf: 'flex-start'
+        }}
+      >
+        {texts.volver}
+      </button>
+
+      <form onSubmit={handleSubmit} style={{ width: '100%' }}>
         {campos.map((campo, idx) => (
-          <div key={idx} style={{ marginBottom: 14 }}>
-            <label>
-              {campo.label || campo.nombre}
-              {campo.obligatorio && " *"}
+          <div key={idx} style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 'bold' }}>
+              {campo.label || campo.nombre}{campo.obligatorio && " *"}
             </label>
-            {campo.tipo === "lista" ? (
-              <select
-                name={campo.nombre}
-                value={formData[campo.nombre] || ""}
-                onChange={handleChange}
-                required={campo.obligatorio}
-              >
-                <option value="">{texts.seleccionar}</option>
-                {(opciones[campo.nombre] || []).map((op, i) => (
-                  <option key={i} value={op}>{op}</option>
-                ))}
-              </select>
-            ) : campo.tipo === "password" ? (
-              <input
-                type="password"
-                name={campo.nombre}
-                value={formData[campo.nombre] || ""}
-                onChange={handleChange}
-                required={campo.obligatorio}
-                autoComplete="new-password"
-              />
-            ) : (
-              <input
-                type={campo.tipo === "email" ? "email" : campo.tipo === "numero" ? "number" : "text"}
-                name={campo.nombre}
-                value={formData[campo.nombre] || ""}
-                onChange={handleChange}
-                required={campo.obligatorio}
-              />
-            )}
+            <input
+              type={campo.tipo}
+              name={campo.nombre}
+              value={formData[campo.nombre] || ""}
+              onChange={handleChange}
+              required={campo.obligatorio}
+              autoComplete={campo.tipo === "password" ? "new-password" : "off"}
+              style={{ width: '100%', padding: 10, fontSize: 16 }}
+            />
           </div>
         ))}
-        <button type="submit">{texts.registrarse}</button>
+        <button
+          type="submit"
+          style={{
+            width: '100%',
+            padding: 10,
+            fontSize: 16,
+            backgroundColor: '#007bff',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer'
+          }}
+        >
+          {texts.registrarse}
+        </button>
       </form>
     </div>
   );

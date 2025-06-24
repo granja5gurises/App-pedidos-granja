@@ -6,7 +6,7 @@ import {
   updateDoc,
   doc
 } from "firebase/firestore";
-import useT from "../../locales/useT";
+import { useTranslation } from "react-i18next";
 import useAdminTheme from "../../helpers/useAdminTheme";
 import BotonVolver from "./BotonVolver";
 import registrarLog from "../../helpers/registrarLog";
@@ -19,7 +19,7 @@ const ROLES = [
 ];
 
 function PanelAdmins() {
-  const t = useT();
+  const { t } = useTranslation();
   const theme = useAdminTheme();
 
   const [usuarios, setUsuarios] = useState([]);

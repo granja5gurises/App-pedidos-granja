@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { signOut } from "firebase/auth";
+import { useNavigate } from "react-router-dom";
+import { auth } from "../../firebase";
 import { Link } from "react-router-dom";
 import { db } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -23,7 +26,13 @@ export default function DashboardAdmin() {
   const [grupoActivo, setGrupoActivo] = useState("inicio");
   const [listasDinamicas, setListasDinamicas] = useState([]);
   const { t, i18n } = useTranslation();
-  const configAdmin = useAdminTheme();
+  const configAdmin = {};
+
+  const navigate = useNavigate();
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/login");
+  };
 
   // --- CONTROL DE ROLES (cambiar por hook/prop real en futuro) ---
   // Ejemplo: "admin", "encargado", "operador"
@@ -86,8 +95,8 @@ export default function DashboardAdmin() {
       roles: ["admin"],
       secciones: [
         { label: t("dashboard.aparienciaTienda"), to: "/apariencia" },
-        { label: t("dashboard.aparienciaAdmin"), to: "/config/apariencia-admin" }
-      ]
+        { label: t("dashboard.aparienciaComanda"), to: "/apariencia/comanda" },
+              ]
     },
     {
       nombre: t("dashboard.configuracion"),
@@ -118,7 +127,7 @@ export default function DashboardAdmin() {
     [t("dashboard.camposRegistro")]: t("dashboard.desc.camposRegistro"),
     [t("dashboard.restricciones")]: t("dashboard.desc.restricciones"),
     [t("dashboard.aparienciaTienda")]: t("dashboard.desc.aparienciaTienda"),
-    [t("dashboard.aparienciaAdmin")]: t("dashboard.desc.aparienciaAdmin"),
+    [t("dashboard.aparienciaComanda")]: t("dashboard.desc.aparienciaComanda"),
     [t("dashboard.admins")]: t("dashboard.desc.admins"),
     [t("dashboard.manual")]: t("dashboard.desc.manual")
   });
@@ -332,11 +341,27 @@ export default function DashboardAdmin() {
         padding: isMobile ? '18px 8px' : '40px',
         backgroundColor: '#ffffff'
       }}>
-        <h2 style={{ fontSize: '1.8rem', marginBottom: '20px' }}>
-          {grupoActivo === "inicio"
-            ? `${t("dashboard.hola")}, ${admin.nombre ? admin.nombre.charAt(0).toUpperCase() + admin.nombre.slice(1) : (admin.email || "admin")}!`
-            : menu.find(g => g.key === grupoActivo)?.nombre}
-        </h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+  <h2 style={{ fontSize: '1.8rem' }}>
+    {grupoActivo === "inicio"
+      ? `${t("dashboard.hola")}, ${admin.nombre ? admin.nombre.charAt(0).toUpperCase() + admin.nombre.slice(1) : (admin.email || "admin")}!`
+      : menu.find(g => g.key === grupoActivo)?.nombre}
+  </h2>
+  <button
+    onClick={handleLogout}
+    style={{
+      backgroundColor: "#d32f2f",
+      color: "white",
+      border: "none",
+      borderRadius: "6px",
+      padding: "8px 16px",
+      fontWeight: "bold",
+      cursor: "pointer"
+    }}
+  >
+    {t("dashboard.cerrarSesion")}
+  </button>
+</div>
         {renderGrupo(menu.find(g => g.key === grupoActivo))}
       </main>
     </div>
